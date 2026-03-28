@@ -978,6 +978,14 @@ class AppDevis(tk.Tk):
         self.title(f"Générateur Devis & Factures — {config.COMPANY['name']}")
         self.geometry("900x600")
         self.configure(padx=8, pady=8)
+        
+        # Définir l'icône de l'application
+        try:
+            icon_path = config.resource_path("logo.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
 
         ttk.Style().theme_use("clam")
 

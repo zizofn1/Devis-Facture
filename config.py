@@ -4,6 +4,17 @@
 
 import os
 import json
+import sys
+
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
 
 # Informations de l'entreprise
 COMPANY = {
@@ -18,7 +29,7 @@ COMPANY = {
     "patente": "3210587651",
     "if_num":  "66070424",
     "ice":     "003570825000002",
-    "logo":    "logo.png",
+    "logo":    resource_path("logo.png"),
     "rib_bank":"Crédit Agricole",
     "rib":     "000 000 0000000000000000 00",
 }

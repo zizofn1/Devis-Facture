@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+bin/
+lib/
+include/
+dist/
+build/
+*.spec
+
+# Application Data
+data.db
+app_settings.json
+*.log
+
+# IDEs
+.vscode/
+.idea/
+.project
+.pydevproject
+.settings/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,715 @@
+# -*- coding: utf-8 -*-
+# ==========================================
+# UI.PY — Interface graphique Tkinter
+# ==========================================
+
+import os
+import sys
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+from datetime import datetime
+
+import config
+from config import COMPANY, DOC_TYPES, DEFAULT_COLUMNS
+from config import save_settings
+from pdf_generator import create_pdf
+from numerotation import generate_number
+from settings import load_columns, save_columns
+
+
+# ==========================================
+# Utilitaire : ouvrir un fichier (cross-platform)
+# ==========================================
+
+def _open_file(path: str):
+    """Ouvre le fichier avec l'application par défaut, toutes plateformes."""
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            os.system(f'open "{path}"')
+        else:
+            os.system(f'xdg-open "{path}"')
+    except Exception:
+        pass  # Si ça échoue, on ignore — le PDF est quand même créé
+
+
+# ==========================================
+# Fenêtre : édition d'une ligne article
+# ==========================================
+
+class ArticleWindow(tk.Toplevel):
+    """Popup pour ajouter ou modifier une ligne article."""
+
+    def __init__(self, parent, columns, on_validate, initial=None):
+        super().__init__(parent)
+        self.title("Ajouter une ligne" if initial is None else "Modifier la ligne")
+        self.resizable(False, False)
+        self.grab_set()
+
+        self._entries = {}
+        # On affiche TOUTES les colonnes visibles sauf 'total' (calculé auto)
+        editable = [c for c in columns if c["visible"] and c["key"] != "total"]
+
+        for i, col in enumerate(editable):
+            ttk.Label(self, text=f"{col['label']} :").grid(
+                row=i, column=0, padx=12, pady=6, sticky="e")
+            width = 38 if col["key"] == "desc" else 18
+            e = ttk.Entry(self, width=width)
+            if initial:
+                e.insert(0, str(initial.get(col["key"], "")))
+            e.grid(row=i, column=1, padx=12, pady=6, sticky="w")
+            self._entries[col["key"]] = e
+
+        def _valider():
+            try:
+                values = {}
+                for col in editable:
+                    raw = self._entries[col["key"]].get().strip().replace(",", ".")
+                    if col["key"] in ("qte", "pu"):
+                        values[col["key"]] = float(raw) if raw else 0.0
+                    else:
+                        values[col["key"]] = raw
+                # Calcul automatique total = qte × pu (si les deux colonnes existent)
+                qte = values.get("qte", 0.0)
+                pu  = values.get("pu",  0.0)
+                values["total"] = qte * pu
+                on_validate(values)
+                self.destroy()
+            except ValueError:
+                messagebox.showerror("Erreur",
+                    "Quantité et Prix Unitaire doivent être des nombres.", parent=self)
+
+        ttk.Button(self, text="✔  Valider", command=_valider).grid(
+            row=len(editable), column=0, columnspan=2, pady=14)
+
+        # Ajuster la hauteur dynamiquement
+        self.update_idletasks()
+        self.geometry(f"420x{max(200, len(editable) * 42 + 80)}")
+
+
+# ==========================================
+# Fenêtre : personnalisation d'une colonne
+# ==========================================
+
+class ColumnEditorWindow(tk.Toplevel):
+    """
+    Clic droit sur un en-tête → renommer, masquer/afficher une colonne.
+    """
+
+    def __init__(self, parent, col_index, columns, on_apply):
+        super().__init__(parent)
+        col = columns[col_index]
+        self.title(f"Colonne « {col['label']} »")
+        self.geometry("400x200")
+        self.grab_set()
+        self.resizable(False, False)
+
+        ttk.Label(self, text="Nouveau nom :").grid(row=0, column=0, padx=12, pady=10, sticky="e")
+        self._e_label = ttk.Entry(self, width=24)
+        self._e_label.insert(0, col["label"])
+        self._e_label.grid(row=0, column=1, padx=12, pady=10)
+
+        self._visible_var = tk.BooleanVar(value=col["visible"])
+        ttk.Checkbutton(self, text="Colonne visible", variable=self._visible_var).grid(
+            row=1, column=0, columnspan=2, pady=4)
+
+        def _apply():
+            new_label   = self._e_label.get().strip() or col["label"]
+            new_visible = self._visible_var.get()
+            # 'desc' et 'total' sont obligatoires pour le PDF
+            if col["key"] in ("desc", "total") and not new_visible:
+                messagebox.showwarning("Attention",
+                    f"La colonne « {col['label']} » est obligatoire pour le PDF.",
+                    parent=self)
+                return
+            on_apply(col_index, new_label, new_visible)
+            self.destroy()
+
+        ttk.Button(self, text="Appliquer", command=_apply).grid(
+            row=2, column=0, columnspan=2, pady=8)
+
+
+# ==========================================
+# Fenêtre : ajouter une nouvelle colonne
+# ==========================================
+
+class AddColumnWindow(tk.Toplevel):
+    """
+    Permet d'ajouter une colonne personnalisée au tableau.
+    La clé interne est générée automatiquement depuis le label.
+    """
+
+    def __init__(self, parent, existing_keys: list[str], on_add):
+        super().__init__(parent)
+        self.title("Ajouter une colonne")
+        self.geometry("400x290")
+        self.grab_set()
+        self.resizable(False, False)
+        self._existing_keys = existing_keys
+        self._on_add = on_add
+
+        ttk.Label(self, text="Nom de la colonne :").grid(row=0, column=0, padx=12, pady=12, sticky="e")
+        self._e_name = ttk.Entry(self, width=22)
+        self._e_name.grid(row=0, column=1, padx=12, pady=12)
+
+        ttk.Label(self, text="Largeur (px) :").grid(row=1, column=0, padx=12, pady=6, sticky="e")
+        self._e_width = ttk.Entry(self, width=8)
+        self._e_width.insert(0, "100")
+        self._e_width.grid(row=1, column=1, padx=12, pady=6, sticky="w")
+
+        self._numeric_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self, text="Valeur numérique (MAD)", variable=self._numeric_var).grid(
+            row=2, column=0, columnspan=2, pady=6)
+
+        ttk.Button(self, text="✔  Ajouter", command=self._confirm).grid(
+            row=3, column=0, columnspan=2, pady=10)
+
+    def _confirm(self):
+        name = self._e_name.get().strip()
+        if not name:
+            messagebox.showwarning("Attention", "Entrez un nom de colonne.", parent=self)
+            return
+
+        # Générer une clé unique depuis le nom (lettres/chiffres/underscore)
+        import re
+        base_key = re.sub(r"[^a-z0-9_]", "_", name.lower())[:20]
+        key = base_key
+        n = 2
+        while key in self._existing_keys:
+            key = f"{base_key}_{n}"
+            n += 1
+
+        try:
+            width = max(40, int(self._e_width.get()))
+        except ValueError:
+            width = 100
+
+        new_col = {
+            "key":     key,
+            "label":   name,
+            "width":   width,
+            "pdf_mm":  round(width * 0.264583),   # px → mm approximatif
+            "anchor":  "e" if self._numeric_var.get() else "w",
+            "visible": True,
+            "custom":  True,   # flag pour distinguer des colonnes système
+        }
+        self._on_add(new_col)
+        self.destroy()
+
+
+# ==========================================
+# Onglet principal (Devis ou Facture)
+# ==========================================
+
+class DocumentTab(ttk.Frame):
+    """Un onglet = un type de document (devis ou facture)."""
+
+    def __init__(self, parent, doc_type: str, columns: list[dict]):
+        super().__init__(parent)
+        self.doc_type = doc_type
+        self.columns  = columns          # référence partagée entre les 2 onglets
+        self._doc_cfg = DOC_TYPES[doc_type]
+        # Cache interne : valeurs brutes des lignes (toujours toutes les clés)
+        self._rows_cache: list[dict] = []
+
+        self._build_top_frame()
+        self._build_items_frame()
+        self._build_bottom_bar()
+
+        # Ligne d'exemple au démarrage
+        self._rows_cache = [{
+            "ref": "M-01", "desc": "Fabrication dressing sur mesure chêne",
+            "qte": 1.0, "pu": 12500.0, "total": 12500.0
+        }]
+        self._refresh_tree()
+        self.update_totals()
+
+    # ── Construction ──────────────────────────────────────────────
+
+    def _build_top_frame(self):
+        lbl   = self._doc_cfg["label"]
+        frame = ttk.LabelFrame(self, text=f"Informations {lbl} & Client")
+        frame.pack(fill="x", padx=6, pady=6)
+
+        default_num = generate_number(self.doc_type, "")
+        left_fields = [
+            (f"N° {lbl} :", "entry_num",   default_num),
+            ("Date :",       "entry_date",  datetime.now().strftime("%d/%m/%Y")),
+            ("Tél :",        "entry_phone", ""),
+        ]
+        for row, (label, attr, default) in enumerate(left_fields):
+            ttk.Label(frame, text=label).grid(row=row, column=0, padx=5, pady=5, sticky="e")
+            e = ttk.Entry(frame)
+            e.insert(0, default)
+            e.grid(row=row, column=1, padx=5, pady=5)
+            setattr(self, attr, e)
+
+        right_fields = [
+            ("Nom Client :", "entry_client",  ""),
+            ("ICE Client :", "entry_ice",     ""),
+            ("Adresse :",    "entry_address", ""),
+        ]
+        for row, (label, attr, default) in enumerate(right_fields):
+            ttk.Label(frame, text=label).grid(row=row, column=2, padx=5, pady=5, sticky="e")
+            e = ttk.Entry(frame, width=30)
+            e.insert(0, default)
+            e.grid(row=row, column=3, padx=5, pady=5)
+            setattr(self, attr, e)
+
+        ttk.Button(frame, text="🔄 Générer N°",
+                   command=self._regen_number).grid(row=0, column=4, padx=8)
+        self.entry_client.bind("<FocusOut>", lambda _: self._regen_number())
+
+    def _build_items_frame(self):
+        self._items_frame = ttk.LabelFrame(self, text="Articles / Prestations")
+        self._items_frame.pack(fill="both", expand=True, padx=6, pady=6)
+
+        self._build_treeview()
+
+        btn_frame = ttk.Frame(self._items_frame)
+        btn_frame.pack(fill="x", padx=5, pady=5)
+        ttk.Button(btn_frame, text="+ Ajouter",    command=self._add_row).pack(side="left", padx=4)
+        ttk.Button(btn_frame, text="✎ Modifier",    command=self._edit_row).pack(side="left", padx=4)
+        ttk.Button(btn_frame, text="✕ Supprimer",   command=self._delete_row).pack(side="left", padx=4)
+        ttk.Separator(btn_frame, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Button(btn_frame, text="⊞ Nouvelle colonne", command=self._add_column).pack(side="left", padx=4)
+
+        ttk.Label(btn_frame, text="TVA (%) :").pack(side="left", padx=(30, 4))
+        self.entry_tva = ttk.Entry(btn_frame, width=5)
+        self.entry_tva.insert(0, str(config.DEFAULT_TVA))
+        self.entry_tva.pack(side="left")
+        self.entry_tva.bind("<KeyRelease>", lambda _: self.update_totals())
+
+    def _build_treeview(self):
+        """(Re)construit le Treeview à partir de self.columns (colonnes visibles)."""
+        # Détruire l'ancien treeview si existant
+        for w in ("tree", "_tree_scroll"):
+            if hasattr(self, w):
+                getattr(self, w).destroy()
+
+        visible    = [c for c in self.columns if c["visible"]]
+        col_keys   = [c["key"] for c in visible]
+
+        self.tree = ttk.Treeview(
+            self._items_frame, columns=col_keys, show="headings", height=8)
+
+        for col in visible:
+            self.tree.heading(col["key"], text=col["label"])
+            self.tree.column(col["key"], width=col["width"], anchor=col["anchor"])
+
+        self.tree.bind("<Button-3>",  self._on_header_right_click)
+        self.tree.bind("<Double-1>",  lambda _: self._edit_row())
+
+        self._tree_scroll = ttk.Scrollbar(
+            self._items_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self._tree_scroll.set)
+
+        self.tree.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self._tree_scroll.pack(side="right", fill="y", pady=5)
+
+    def _build_bottom_bar(self):
+        frame = ttk.Frame(self)
+        frame.pack(fill="x", padx=6, pady=12)
+
+        self.lbl_totals = ttk.Label(
+            frame,
+            text="Total HT : 0.00 MAD  |  TVA : 0.00 MAD  |  TTC : 0.00 MAD",
+            font=("Helvetica", 11, "bold"),
+        )
+        self.lbl_totals.pack(side="left", padx=5)
+
+        lbl = self._doc_cfg["label"]
+        ttk.Button(
+            frame, text=f"📄  GÉNÉRER LA {lbl}",
+            command=self.generate
+        ).pack(side="right", ipadx=10, ipady=8)
+
+    # ── Cache ↔ Treeview ──────────────────────────────────────────
+
+    def _cache_to_tree_values(self, row: dict) -> tuple:
+        """
+        Convertit un dict (cache) en tuple pour le Treeview
+        selon les colonnes VISIBLES actuelles.
+        """
+        visible = [c for c in self.columns if c["visible"]]
+        result  = []
+        for col in visible:
+            val = row.get(col["key"], "")
+            if col["key"] in ("pu", "total") and val != "":
+                try:
+                    val = f"{float(val):.2f}"
+                except (ValueError, TypeError):
+                    pass
+            result.append(val)
+        return tuple(result)
+
+    def _tree_values_to_cache(self, values: tuple) -> dict:
+        """
+        Convertit un tuple Treeview en dict (cache) selon les colonnes VISIBLES.
+        """
+        visible = [c for c in self.columns if c["visible"]]
+        return {col["key"]: values[i] for i, col in enumerate(visible) if i < len(values)}
+
+    def _refresh_tree(self):
+        """
+        Reconstruit le Treeview et réinsère toutes les lignes depuis _rows_cache.
+        Appelé après tout changement de structure des colonnes.
+        """
+        self._build_treeview()
+        for row in self._rows_cache:
+            self.tree.insert("", "end", values=self._cache_to_tree_values(row))
+
+    # ── Numérotation ─────────────────────────────────────────────
+
+    def _regen_number(self):
+        new_num = generate_number(self.doc_type, self.entry_client.get())
+        self.entry_num.delete(0, tk.END)
+        self.entry_num.insert(0, new_num)
+
+    # ── Actions sur les lignes ────────────────────────────────────
+
+    def _add_row(self):
+        def on_validate(d):
+            self._rows_cache.append(d)
+            self.tree.insert("", "end", values=self._cache_to_tree_values(d))
+            self.update_totals()
+        ArticleWindow(self, self.columns, on_validate=on_validate)
+
+    def _edit_row(self):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        item     = sel[0]
+        tree_idx = self.tree.get_children().index(item)
+        current  = self._rows_cache[tree_idx]
+
+        def apply(d):
+            self._rows_cache[tree_idx] = d
+            self.tree.item(item, values=self._cache_to_tree_values(d))
+            self.update_totals()
+
+        ArticleWindow(self, self.columns, on_validate=apply, initial=current)
+
+    def _delete_row(self):
+        for item in self.tree.selection():
+            idx = self.tree.get_children().index(item)
+            self._rows_cache.pop(idx)
+            self.tree.delete(item)
+        self.update_totals()
+
+    # ── Colonnes : clic droit ──────────────────────────────────────
+
+    def _on_header_right_click(self, event):
+        if self.tree.identify_region(event.x, event.y) != "heading":
+            return
+        col_id          = self.tree.identify_column(event.x)   # "#1", "#2", ...
+        col_idx_visible = int(col_id.replace("#", "")) - 1
+        visible_indices = [i for i, c in enumerate(self.columns) if c["visible"]]
+        if col_idx_visible >= len(visible_indices):
+            return
+        global_idx = visible_indices[col_idx_visible]
+
+        def on_apply(g_idx, new_label, new_visible):
+            self.columns[g_idx]["label"]   = new_label
+            self.columns[g_idx]["visible"] = new_visible
+            save_columns(self.columns)
+            self._refresh_tree()   # ← reconstruit APRÈS avoir mis à jour columns
+            self.update_totals()
+
+        ColumnEditorWindow(self, global_idx, self.columns, on_apply)
+
+    # ── Colonnes : ajouter ────────────────────────────────────────
+
+    def _add_column(self):
+        existing_keys = [c["key"] for c in self.columns]
+
+        def on_add(new_col):
+            self.columns.append(new_col)
+            save_columns(self.columns)
+            self._refresh_tree()
+            self.update_totals()
+
+        AddColumnWindow(self, existing_keys, on_add)
+
+    # ── Totaux ────────────────────────────────────────────────────
+
+    def update_totals(self):
+        """
+        Calcule HT depuis _rows_cache (toujours fiable, indépendant des colonnes visibles).
+        """
+        ht = sum(
+            float(str(row.get("total", 0)).replace(" ", "").replace(",", ".") or 0)
+            for row in self._rows_cache
+        )
+        try:
+            tva_pct = float(str(self.entry_tva.get()).replace(",", ".") or 0)
+        except ValueError:
+            tva_pct = float(DEFAULT_TVA)
+
+        tva_val = ht * (tva_pct / 100)
+        ttc     = ht + tva_val
+        self.lbl_totals.config(
+            text=(f"Total HT : {ht:,.2f} MAD  |  TVA : {tva_val:,.2f} MAD  |  TTC : {ttc:,.2f} MAD")
+            .replace(",", " ")
+        )
+        return ht, tva_pct, tva_val, ttc
+
+    # ── Génération PDF ────────────────────────────────────────────
+
+    def generate(self):
+        client_data = {
+            "num":     self.entry_num.get()     or "XXX",
+            "date":    self.entry_date.get()    or "-",
+            "name":    self.entry_client.get()  or "-",
+            "ice":     self.entry_ice.get()     or "-",
+            "address": self.entry_address.get() or "-",
+            "phone":   self.entry_phone.get()   or "-",
+        }
+
+        if not self._rows_cache:
+            messagebox.showwarning("Attention", "Ajoutez au moins un article.")
+            return
+
+        # Construire items_data depuis le cache (toutes les clés disponibles)
+        items_data = []
+        for row in self._rows_cache:
+            item = dict(row)
+            for k in ("qte", "pu", "total"):
+                try:
+                    item[k] = float(str(item.get(k, 0)).replace(" ", "").replace(",", "."))
+                except (ValueError, TypeError):
+                    item[k] = 0.0
+            items_data.append(item)
+
+        ht, tva_pct, tva_val, ttc = self.update_totals()
+        totals_data = {"ht": ht, "tva_percent": tva_pct, "tva_val": tva_val, "ttc": ttc}
+
+        lbl = self._doc_cfg["label"]
+        # Nom de fichier sécurisé (retire les caractères interdits)
+        safe_num = "".join(c for c in client_data["num"] if c not in r'\/:*?"<>|')
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            initialfile=f"{lbl}_{safe_num}.pdf",
+            filetypes=[("PDF files", "*.pdf")],
+        )
+        if not filename:
+            return
+
+        # ── Génération + ouverture séparées du try/except ──
+        try:
+            create_pdf(filename, client_data, items_data, totals_data,
+                       doc_type=self.doc_type, columns=self.columns)
+        except Exception as exc:
+            messagebox.showerror("Erreur de génération PDF",
+                                 f"Une erreur s'est produite :\n{exc}")
+            return
+
+        # PDF créé avec succès → on informe, puis on essaie d'ouvrir
+        messagebox.showinfo("Succès", f"{lbl} générée avec succès !\n\n{filename}")
+        _open_file(filename)   # cross-platform, erreur ignorée silencieusement
+
+
+# ==========================================
+
+# ==========================================
+# Fenêtre : Paramètres (Settings)
+# ==========================================
+class SettingsWindow(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("⚙ Paramètres de l'application")
+        self.geometry("600x650")
+        self.grab_set()
+        self.resizable(False, False)
+
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # ── Tab 1: Informations Entreprise ──
+        tab_company = ttk.Frame(notebook)
+        notebook.add(tab_company, text="  Informations Entreprise  ")
+        
+        self.comp_entries = {}
+        comp_fields = [
+            ("Nom d'Entreprise", "name"), ("Slogan", "slogan"), ("Dirigeant", "manager"),
+            ("Adresse", "address"), ("Ville", "city"), ("Téléphone", "phone"),
+            ("Email", "email"), ("RC", "rc"), ("Patente", "patente"),
+            ("Num. IF", "if_num"), ("ICE", "ice"),
+            ("Banque", "rib_bank"), ("RIB", "rib")
+        ]
+        
+        for i, (label, key) in enumerate(comp_fields):
+            ttk.Label(tab_company, text=label + " :").grid(row=i, column=0, padx=10, pady=6, sticky="e")
+            e = ttk.Entry(tab_company, width=45)
+            e.insert(0, config.COMPANY.get(key, ""))
+            e.grid(row=i, column=1, padx=10, pady=6, sticky="w")
+            self.comp_entries[key] = e
+
+        # ── Tab 2: Devis & Factures ──
+        tab_docs = ttk.Frame(notebook)
+        notebook.add(tab_docs, text="  Devis & Factures  ")
+        
+        ttk.Label(tab_docs, text="TVA par défaut (%) :").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+        self.e_tva = ttk.Entry(tab_docs, width=15)
+        self.e_tva.insert(0, str(config.DEFAULT_TVA))
+        self.e_tva.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+
+        ttk.Label(tab_docs, text="Validité Devis (Jours) :").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+        self.e_valid = ttk.Entry(tab_docs, width=15)
+        self.e_valid.insert(0, str(config.DEVIS_VALIDITY_DAYS))
+        self.e_valid.grid(row=1, column=1, padx=10, pady=10, sticky="w")
+
+        ttk.Label(tab_docs, text="Conditions Devis :").grid(row=2, column=0, padx=10, pady=10, sticky="ne")
+        self.t_cond_devis = tk.Text(tab_docs, width=45, height=5, font=("Helvetica", 9))
+        self.t_cond_devis.insert("1.0", "\n".join(config.DOC_TYPES["devis"].get("conditions", [])))
+        self.t_cond_devis.grid(row=2, column=1, padx=10, pady=10, sticky="w")
+
+        ttk.Label(tab_docs, text="Conditions Facture :").grid(row=3, column=0, padx=10, pady=10, sticky="ne")
+        self.t_cond_fac = tk.Text(tab_docs, width=45, height=5, font=("Helvetica", 9))
+        self.t_cond_fac.insert("1.0", "\n".join(config.DOC_TYPES["facture"].get("conditions", [])))
+        self.t_cond_fac.grid(row=3, column=1, padx=10, pady=10, sticky="w")
+
+        # ── Bottom Bar ──
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(fill="x", padx=10, pady=10)
+        
+        ttk.Button(btn_frame, text="Annuler", command=self.destroy).pack(side="right", padx=5)
+        ttk.Button(btn_frame, text="💾 Enregistrer", command=self.save).pack(side="right", padx=5)
+
+    def save(self):
+        # Update Company
+        for k, e in self.comp_entries.items():
+            config.COMPANY[k] = e.get().strip()
+        
+        # Update TVA and Validity
+        try:
+            config.DEFAULT_TVA = int(self.e_tva.get().strip())
+        except ValueError:
+            pass
+        try:
+            config.DEVIS_VALIDITY_DAYS = int(self.e_valid.get().strip())
+            config.DOC_TYPES["devis"]["validity_line"] = f"Validité : {config.DEVIS_VALIDITY_DAYS} Jours"
+        except ValueError:
+            pass
+            
+        # Update conditions
+        c_devis = [c.strip() for c in self.t_cond_devis.get("1.0", "end-1c").split("\n") if c.strip()]
+        c_fac = [c.strip() for c in self.t_cond_fac.get("1.0", "end-1c").split("\n") if c.strip()]
+        
+        config.DOC_TYPES["devis"]["conditions"] = c_devis
+        config.DOC_TYPES["facture"]["conditions"] = c_fac
+        
+        # Persist and close
+        config.save_settings()
+        from tkinter import messagebox
+        messagebox.showinfo("Succès", "Paramètres mis à jour avec succès !", parent=self)
+        self.destroy()
+
+# ==========================================
+# Fenêtre : Guide d'utilisation et Aide
+# ==========================================
+class HelpWindow(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("📖 Guide d'utilisation & FAQ")
+        self.geometry("650x550")
+        self.grab_set()
+        
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        guides = {
+            "Articles & Calculs": (
+                "- Utiliser le bouton [+ Ajouter] pour insérer un produit/service.\n\n"
+                "- [Double-Clic] sur n'importe quelle ligne pour modifier ses quantités ou son prix.\n\n"
+                "- Sélectionner une ou plusieurs lignes et cliquer sur [✕ Supprimer] pour les effacer.\n\n"
+                "- Le montant Total, la TVA, et le TTC se mettent à jour automatiquement à chaque modification."
+            ),
+            "Colonnes du Tableau": (
+                "- [Clic Droit] sur l'en-tête d'une colonne permet de l'Afficher, la Masquer du PDF, ou la Renommer.\n\n"
+                "- La Désignation et le Total HT sont obligatoires pour un Devis valide et ne peuvent être masqués.\n\n"
+                "- Utilisez [⊞ Nouvelle colonne] pour ajouter une colonne personnalisée au PDF, utile pour afficher l'Unité ou la Remise."
+            ),
+            "Numérotation": (
+                "- Le Numéro (N° Devis/Facture) est auto-généré sur la base du nom du Client.\n\n"
+                "- Remplissez simplement le champ 'Nom Client' et cliquez ailleurs, le numéro prendra les initiales du client automatiquement.\n\n"
+                "- Vous pouvez toujours cliquer sur [🔄 Générer N°] ou modifier le champ manuellement à votre guise."
+            ),
+            "Génération PDF": (
+                "- Cliquez sur le grand bouton [📄 GÉNÉRER LA FACTURE/DEVIS] en bas à droite.\n\n"
+                "- Le système vous demandera où vous souhaitez l'enregistrer (Il propose automatiquement le nom du client avec le bon titre).\n\n"
+                "- Après l'enregistrement, l'application tentera d'ouvrir le fichier PDF immédiatement."
+            ),
+            "FAQ & Problèmes": (
+                "❓ Problème : Le devis n'est pas enregistré lorsque je ferme l'application ?\n"
+                "💡 Solution : L'application n'enregistre pas automatiquement les anciens devis, elle vous permet de générer des PDF. Assurez-vous d'avoir enregistré le PDF final sur votre ordinateur.\n\n"
+                
+                "❓ Problème : Mon logo d'entreprise ne s'affiche pas sur le PDF !\n"
+                "💡 Solution : Placez une image nommée 'logo.png' dans le même dossier que l'application, sinon le logiciel le désactivera automatiquement pour éviter un crash.\n\n"
+                
+                "❓ Problème : J'ai modifié les Paramètres mais rien n'a changé sur mon PDF.\n"
+                "💡 Solution : Êtes-vous sûr d'avoir cliqué sur [💾 Enregistrer] à l'intérieur de la fenêtre Paramètres ? Sinon, vos modifications seront ignorées."
+            )
+        }
+        
+        for title, text in guides.items():
+            frame = ttk.Frame(notebook, padding=10)
+            notebook.add(frame, text=f" {title} ")
+            
+            txt = tk.Text(frame, wrap="word", font=("Helvetica", 10), bg=self.cget('bg'), relief="flat")
+            txt.insert("1.0", text)
+            txt.config(state="disabled") # Lecture seule
+            txt.pack(fill="both", expand=True)
+            
+        ttk.Button(self, text="Fermer l'aide", command=self.destroy).pack(pady=10)
+
+
+# ==========================================
+# Fenêtre principale
+# ==========================================
+
+class AppDevis(tk.Tk):
+
+    def __init__(self):
+        super().__init__()
+        self.title(f"Générateur Devis & Factures — {config.COMPANY['name']}")
+        self.geometry("900x600")
+        self.configure(padx=8, pady=8)
+
+        ttk.Style().theme_use("clam")
+
+        # ==========================================
+        # Barre de Menus (Aide)
+        # ==========================================
+        menubar = tk.Menu(self)
+        
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="📖 Guide d'utilisation", command=lambda: HelpWindow(self))
+        help_menu.add_separator()
+        from tkinter import messagebox
+        help_menu.add_command(label="À propos", command=lambda: messagebox.showinfo("À propos", f"Générateur Devis & Factures v2.0\nDéveloppé pour {config.COMPANY.get('name', 'Fun Design')}"))
+        
+        menubar.add_cascade(label="Aide (?)", menu=help_menu)
+        self.config(menu=menubar)
+        
+        # Colonnes partagées entre les deux onglets
+        self._columns = load_columns()
+
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill="both", expand=True)
+
+        for doc_type in ("devis", "facture"):
+            tab = DocumentTab(notebook, doc_type, self._columns)
+            notebook.add(tab, text=f"  {config.DOC_TYPES[doc_type]['label']}  ")
+
+        ttk.Label(
+            self,
+            text="💡 Clic droit sur un en-tête pour renommer/masquer · ⊞ Nouvelle colonne pour en ajouter une",
+            foreground="#64748b", font=("Helvetica", 9),
+        ).pack(side="bottom", pady=4)
+
+        # Bouton Paramètres (Placé en haut à droite, au dessus du notebook)
+        btn_settings = ttk.Button(self, text="⚙ Paramètres", command=lambda: SettingsWindow(self))
+        btn_settings.place(relx=1.0, rely=0.0, x=-12, y=6, anchor="ne")
+        btn_settings.lift()

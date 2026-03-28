@@ -1,0 +1,30 @@
+{
+    "COMPANY": {
+        "name": "Fun Design F&Z",
+        "slogan": "Tous travaux d'aménagement d'intérieur",
+        "manager": "Dirigée par Zouhair",
+        "address": "77 rue mohamed smiha",
+        "city": "10etg apt57, Casablanca",
+        "phone": "06 56 56 43 13",
+        "email": "contact@fundesignfz.ma",
+        "rc": "642625",
+        "patente": "3210587651",
+        "if_num": "66070424",
+        "ice": "003570825000002",
+        "logo": "logo.png",
+        "rib_bank": "Crédit Acrigole",
+        "rib": "000 000 0000000000000000 00"
+    },
+    "CONDITIONS_DEVIS": [
+        "Acompte de 50% à la validation.",
+        "Solde de 50% à la livraison.",
+        "Délai : 2 semaines après acompte."
+    ],
+    "CONDITIONS_FACTURE": [
+        "Paiement à réception de facture.",
+        "Tout retard entraîne des pénalités de 1,5% par mois.",
+        "Escompte pour paiement anticipé : néant."
+    ],
+    "DEVIS_VALIDITY_DAYS": 30,
+    "DEFAULT_TVA": 20
+}

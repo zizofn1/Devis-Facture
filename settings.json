@@ -1,0 +1,34 @@
+{
+  "columns": [
+    {
+      "key": "ref",
+      "label": "Réf.",
+      "visible": true
+    },
+    {
+      "key": "desc",
+      "label": "Désignation",
+      "visible": true
+    },
+    {
+      "key": "qte",
+      "label": "Qté",
+      "visible": true
+    },
+    {
+      "key": "pu",
+      "label": "P.U (MAD)",
+      "visible": true
+    },
+    {
+      "key": "total",
+      "label": "Total HT",
+      "visible": true
+    },
+    {
+      "key": "marque",
+      "label": "marque",
+      "visible": true
+    }
+  ]
+}

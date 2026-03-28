@@ -15,6 +15,21 @@ from config import save_settings
 from pdf_generator import create_pdf
 from numerotation import generate_number
 from settings import load_columns, save_columns
+import database
+from tkinter import colorchooser
+import csv
+
+
+# ==========================================
+# Utilitaires de formatage
+# ==========================================
+
+def _format_thousands(val):
+    """Formate un nombre avec espace pour les milliers et 2 décimales."""
+    try:
+        return f"{float(val):,.2f}".replace(",", " ")
+    except (ValueError, TypeError):
+        return str(val)
 
 
 # ==========================================
@@ -281,6 +296,24 @@ class DocumentTab(ttk.Frame):
         self.entry_tva.pack(side="left")
         self.entry_tva.bind("<KeyRelease>", lambda _: self.update_totals())
 
+        self.var_auto_entrepreneur = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            btn_frame, text="Exonéré de TVA (0%)", 
+            variable=self.var_auto_entrepreneur, 
+            command=self._toggle_auto
+        ).pack(side="left", padx=(15, 4))
+
+    def _toggle_auto(self):
+        if self.var_auto_entrepreneur.get():
+            self.entry_tva.delete(0, tk.END)
+            self.entry_tva.insert(0, "0")
+            self.entry_tva.config(state="disabled")
+        else:
+            self.entry_tva.config(state="normal")
+            self.entry_tva.delete(0, tk.END)
+            self.entry_tva.insert(0, str(config.DEFAULT_TVA))
+        self.update_totals()
+
     def _build_treeview(self):
         """(Re)construit le Treeview à partir de self.columns (colonnes visibles)."""
         # Détruire l'ancien treeview si existant
@@ -321,9 +354,62 @@ class DocumentTab(ttk.Frame):
 
         lbl = self._doc_cfg["label"]
         ttk.Button(
+            frame, text="💾 Enregistrer",
+            command=self.save_to_db
+        ).pack(side="right", padx=10, ipadx=10, ipady=8)
+
+        ttk.Button(
             frame, text=f"📄  GÉNÉRER LA {lbl}",
             command=self.generate
         ).pack(side="right", ipadx=10, ipady=8)
+
+    def save_to_db(self, show_msg=True):
+        client_data = {
+            "num":     self.entry_num.get()     or "XXX",
+            "date":    self.entry_date.get()    or "-",
+            "name":    self.entry_client.get()  or "-",
+            "ice":     self.entry_ice.get()     or "-",
+            "address": self.entry_address.get() or "-",
+            "phone":   self.entry_phone.get()   or "-",
+        }
+        if not self._rows_cache:
+            if show_msg: messagebox.showwarning("Attention", "Ajoutez au moins un article.")
+            return False
+            
+        items_data = []
+        for row in self._rows_cache:
+            item = dict(row)
+            for k in ("qte", "pu", "total"):
+                try:
+                    item[k] = float(str(item.get(k, 0)).replace(" ", "").replace(",", "."))
+                except (ValueError, TypeError):
+                    item[k] = 0.0
+            items_data.append(item)
+            
+        ht, tva_pct, tva_val, ttc = self.update_totals()
+        totals_data = {"ht": ht, "tva_percent": tva_pct, "tva_val": tva_val, "ttc": ttc}
+        is_auto = getattr(self, 'var_auto_entrepreneur', None)
+        is_auto_val = is_auto.get() if is_auto else False
+        
+        try:
+            database.save_document(
+                doc_type=self.doc_type,
+                doc_num=client_data["num"],
+                doc_date=client_data["date"],
+                client_name=client_data["name"],
+                total_ht=ht,
+                total_ttc=ttc,
+                is_auto_entrepreneur=is_auto_val,
+                client_data=client_data,
+                items_data=items_data,
+                columns=self.columns,
+                totals_data=totals_data
+            )
+            if show_msg: messagebox.showinfo("Succès", "Document enregistré dans l'historique.")
+            return True
+        except Exception as e:
+            if show_msg: messagebox.showerror("Erreur Base de Données", f"Impossible d'enregistrer :\n{e}")
+            return False
 
     # ── Cache ↔ Treeview ──────────────────────────────────────────
 
@@ -337,10 +423,7 @@ class DocumentTab(ttk.Frame):
         for col in visible:
             val = row.get(col["key"], "")
             if col["key"] in ("pu", "total") and val != "":
-                try:
-                    val = f"{float(val):.2f}"
-                except (ValueError, TypeError):
-                    pass
+                val = _format_thousands(val)
             result.append(val)
         return tuple(result)
 
@@ -443,15 +526,17 @@ class DocumentTab(ttk.Frame):
             for row in self._rows_cache
         )
         try:
-            tva_pct = float(str(self.entry_tva.get()).replace(",", ".") or 0)
+            if hasattr(self, 'var_auto_entrepreneur') and self.var_auto_entrepreneur.get():
+                tva_pct = 0.0
+            else:
+                tva_pct = float(str(self.entry_tva.get()).replace(",", ".") or 0)
         except ValueError:
-            tva_pct = float(DEFAULT_TVA)
+            tva_pct = float(config.DEFAULT_TVA)
 
         tva_val = ht * (tva_pct / 100)
         ttc     = ht + tva_val
         self.lbl_totals.config(
-            text=(f"Total HT : {ht:,.2f} MAD  |  TVA : {tva_val:,.2f} MAD  |  TTC : {ttc:,.2f} MAD")
-            .replace(",", " ")
+            text=(f"Total HT : {_format_thousands(ht)} MAD  |  TVA : {_format_thousands(tva_val)} MAD  |  TTC : {_format_thousands(ttc)} MAD")
         )
         return ht, tva_pct, tva_val, ttc
 
@@ -484,6 +569,8 @@ class DocumentTab(ttk.Frame):
 
         ht, tva_pct, tva_val, ttc = self.update_totals()
         totals_data = {"ht": ht, "tva_percent": tva_pct, "tva_val": tva_val, "ttc": ttc}
+        is_auto = getattr(self, 'var_auto_entrepreneur', None)
+        is_auto_val = is_auto.get() if is_auto else False
 
         lbl = self._doc_cfg["label"]
         # Nom de fichier sécurisé (retire les caractères interdits)
@@ -496,10 +583,14 @@ class DocumentTab(ttk.Frame):
         if not filename:
             return
 
+        # Sauvegarder dans la DB avant de générer
+        self.save_to_db(show_msg=False)
+
         # ── Génération + ouverture séparées du try/except ──
         try:
             create_pdf(filename, client_data, items_data, totals_data,
-                       doc_type=self.doc_type, columns=self.columns)
+                       doc_type=self.doc_type, columns=self.columns,
+                       is_auto_entrepreneur=is_auto_val)
         except Exception as exc:
             messagebox.showerror("Erreur de génération PDF",
                                  f"Une erreur s'est produite :\n{exc}")
@@ -570,6 +661,33 @@ class SettingsWindow(tk.Toplevel):
         self.t_cond_fac.insert("1.0", "\n".join(config.DOC_TYPES["facture"].get("conditions", [])))
         self.t_cond_fac.grid(row=3, column=1, padx=10, pady=10, sticky="w")
 
+        # ── Tab 3: Apparence (Couleurs) ──
+        tab_colors = ttk.Frame(notebook)
+        notebook.add(tab_colors, text="  Apparence  ")
+        
+        self.color_vars = {
+            "primary": tk.StringVar(value=config.COLORS.get("primary", "#9a7f85")),
+            "dark": tk.StringVar(value=config.COLORS.get("dark", "#1e293b"))
+        }
+        
+        def _pick_color(key):
+            currentColor = self.color_vars[key].get()
+            color = colorchooser.askcolor(title="Choisir une couleur", initialcolor=currentColor)[1]
+            if color:
+                self.color_vars[key].set(color)
+                # Mettre à jour l'aperçu du bouton
+                self.color_btns[key].config(bg=color)
+                
+        self.color_btns = {}
+        for i, (label, key) in enumerate([("Couleur Principale", "primary"), ("Couleur Sombre", "dark")]):
+            ttk.Label(tab_colors, text=label + " :").grid(row=i, column=0, padx=10, pady=15, sticky="e")
+            
+            # Bouton coloré d'aperçu
+            current_hex = self.color_vars[key].get()
+            btn = tk.Button(tab_colors, width=15, bg=current_hex, command=lambda k=key: _pick_color(k))
+            btn.grid(row=i, column=1, padx=10, pady=15, sticky="w")
+            self.color_btns[key] = btn
+
         # ── Bottom Bar ──
         btn_frame = ttk.Frame(self)
         btn_frame.pack(fill="x", padx=10, pady=10)
@@ -599,6 +717,10 @@ class SettingsWindow(tk.Toplevel):
         
         config.DOC_TYPES["devis"]["conditions"] = c_devis
         config.DOC_TYPES["facture"]["conditions"] = c_fac
+        
+        # Update colors
+        for key, var in self.color_vars.items():
+            config.COLORS[key] = var.get()
         
         # Persist and close
         config.save_settings()
@@ -666,6 +788,186 @@ class HelpWindow(tk.Toplevel):
 
 
 # ==========================================
+# Fenêtre : Historique
+# ==========================================
+class HistoryTab(ttk.Frame):
+    def __init__(self, parent, on_open_doc):
+        super().__init__(parent)
+        self.on_open_doc = on_open_doc
+        
+        top_bar = ttk.Frame(self)
+        top_bar.pack(fill="x", padx=10, pady=(10, 5))
+        
+        ttk.Button(top_bar, text="🔄 Actualiser", command=self.refresh).pack(side="left", padx=5)
+        ttk.Button(top_bar, text="📂 Ouvrir", command=self.open_selected).pack(side="left", padx=5)
+        ttk.Button(top_bar, text="✕ Supprimer", command=self.delete_selected).pack(side="left", padx=5)
+        ttk.Button(top_bar, text="📊 Exporter Excel", command=self.export_to_excel).pack(side="left", padx=5)
+        
+        filter_bar = ttk.LabelFrame(self, text="Filtres de recherche")
+        filter_bar.pack(fill="x", padx=10, pady=(0, 10))
+        
+        # Type
+        ttk.Label(filter_bar, text="Type :").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        self.filter_type_var = tk.StringVar(value="Tous")
+        cb_type = ttk.Combobox(filter_bar, textvariable=self.filter_type_var, values=["Tous", "Devis", "Facture"], state="readonly", width=10)
+        cb_type.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        cb_type.bind("<<ComboboxSelected>>", lambda _: self.refresh())
+        
+        # Date
+        ttk.Label(filter_bar, text="Date :").grid(row=0, column=2, padx=5, pady=5, sticky="e")
+        self.filter_date_var = tk.StringVar()
+        ent_date = ttk.Entry(filter_bar, textvariable=self.filter_date_var, width=15)
+        ent_date.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+        ent_date.bind("<KeyRelease>", lambda _: self.refresh())
+        
+        # Recherche globale (Client, Numéro)
+        ttk.Label(filter_bar, text="Nom Client / N° :").grid(row=0, column=4, padx=5, pady=5, sticky="e")
+        self.filter_search_var = tk.StringVar()
+        ent_search = ttk.Entry(filter_bar, textvariable=self.filter_search_var, width=25)
+        ent_search.grid(row=0, column=5, padx=5, pady=5, sticky="w")
+        ent_search.bind("<KeyRelease>", lambda _: self.refresh())
+
+        # ID
+        ttk.Label(filter_bar, text="ID (base) :").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        self.filter_id_var = tk.StringVar()
+        ent_id = ttk.Entry(filter_bar, textvariable=self.filter_id_var, width=10)
+        ent_id.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        ent_id.bind("<KeyRelease>", lambda _: self.refresh())
+
+        # Montant Min
+        ttk.Label(filter_bar, text="Montant Min :").grid(row=1, column=2, padx=5, pady=5, sticky="e")
+        self.filter_min_var = tk.StringVar()
+        ent_min = ttk.Entry(filter_bar, textvariable=self.filter_min_var, width=15)
+        ent_min.grid(row=1, column=3, padx=5, pady=5, sticky="w")
+        ent_min.bind("<KeyRelease>", lambda _: self.refresh())
+
+        # Montant Max
+        ttk.Label(filter_bar, text="Montant Max :").grid(row=1, column=4, padx=5, pady=5, sticky="e")
+        self.filter_max_var = tk.StringVar()
+        ent_max = ttk.Entry(filter_bar, textvariable=self.filter_max_var, width=15)
+        ent_max.grid(row=1, column=5, padx=5, pady=5, sticky="w")
+        ent_max.bind("<KeyRelease>", lambda _: self.refresh())
+        
+        columns = ("id", "type", "num", "date", "client", "ttc")
+        self.tree = ttk.Treeview(self, columns=columns, show="headings")
+        
+        self.tree.heading("id", text="ID")
+        self.tree.heading("type", text="Type")
+        self.tree.heading("num", text="N° Document")
+        self.tree.heading("date", text="Date")
+        self.tree.heading("client", text="Client")
+        self.tree.heading("ttc", text="Montant TTC")
+        
+        self.tree.column("id", width=50, anchor="center")
+        self.tree.column("type", width=100, anchor="center")
+        self.tree.column("num", width=120, anchor="center")
+        self.tree.column("date", width=100, anchor="center")
+        self.tree.column("client", width=250, anchor="w")
+        self.tree.column("ttc", width=120, anchor="e")
+        
+        self.tree.bind("<Double-1>", lambda _: self.open_selected())
+        
+        scroll = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        
+        self.tree.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=(0, 10))
+        scroll.pack(side="right", fill="y", padx=(0, 10), pady=(0, 10))
+        
+        self.refresh()
+        
+    def refresh(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        f = self.filter_type_var.get()
+        doc_type = None
+        if f == "Devis": doc_type = "devis"
+        elif f == "Facture": doc_type = "facture"
+            
+        docs = database.get_all_documents(doc_type=doc_type)
+
+        date_q = self.filter_date_var.get().strip().lower()
+        search_q = self.filter_search_var.get().strip().lower()
+        id_q = self.filter_id_var.get().strip()
+
+        try:
+            min_t = float(self.filter_min_var.get().strip())
+        except ValueError:
+            min_t = None
+            
+        try:
+            max_t = float(self.filter_max_var.get().strip())
+        except ValueError:
+            max_t = None
+
+        for d in docs:
+            # Check ID exact
+            if id_q and id_q != str(d["id"]):
+                continue
+                
+            # Check min/max TTC
+            if min_t is not None and d["total_ttc"] < min_t:
+                continue
+            if max_t is not None and d["total_ttc"] > max_t:
+                continue
+
+            # Check date criteria
+            if date_q and date_q not in d["doc_date"].lower():
+                continue
+                
+            # Check search criteria (name or number)
+            if search_q:
+                n = d["client_name"].lower()
+                num = d["doc_num"].lower()
+                if search_q not in n and search_q not in num:
+                    continue
+
+            ttc_str = _format_thousands(d['total_ttc']) + " MAD"
+            type_str = "DEVIS" if d["doc_type"] == "devis" else "FACTURE"
+            self.tree.insert("", "end", values=(d["id"], type_str, d["doc_num"], d["doc_date"], d["client_name"], ttc_str))
+            
+    def export_to_excel(self):
+        """Exporte la vue actuelle de l'historique vers un fichier CSV compatible Excel."""
+        items = self.tree.get_children()
+        if not items:
+            messagebox.showwarning("Export", "Aucune donnée à exporter.")
+            return
+
+        filename = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            initialfile=f"Historique_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            filetypes=[("Fichier CSV (Excel)", "*.csv")],
+        )
+        if not filename:
+            return
+
+        try:
+            with open(filename, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f, delimiter=";")
+                # En-têtes
+                writer.writerow(["ID", "Type", "N° Document", "Date", "Client", "Montant TTC"])
+                # Lignes
+                for item in items:
+                    writer.writerow(self.tree.item(item)["values"])
+            
+            messagebox.showinfo("Export", f"Fichier exporté avec succès !\n\n{filename}")
+        except Exception as e:
+            messagebox.showerror("Erreur Export", f"Impossible d'exporter le fichier :\n{e}")
+            
+    def open_selected(self):
+        sel = self.tree.selection()
+        if not sel: return
+        doc_id = self.tree.item(sel[0])["values"][0]
+        self.on_open_doc(doc_id)
+        
+    def delete_selected(self):
+        sel = self.tree.selection()
+        if not sel: return
+        if messagebox.askyesno("Confirmation", "Supprimer ce document de l'historique ?"):
+            doc_id = self.tree.item(sel[0])["values"][0]
+            database.delete_document(doc_id)
+            self.refresh()
+
+# ==========================================
 # Fenêtre principale
 # ==========================================
 
@@ -696,12 +998,18 @@ class AppDevis(tk.Tk):
         # Colonnes partagées entre les deux onglets
         self._columns = load_columns()
 
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill="both", expand=True)
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill="both", expand=True)
 
+        self.tabs = {}
         for doc_type in ("devis", "facture"):
-            tab = DocumentTab(notebook, doc_type, self._columns)
-            notebook.add(tab, text=f"  {config.DOC_TYPES[doc_type]['label']}  ")
+            tab = DocumentTab(self.notebook, doc_type, self._columns)
+            self.tabs[doc_type] = tab
+            self.notebook.add(tab, text=f"  {config.DOC_TYPES[doc_type]['label']}  ")
+
+        self.history_tab = HistoryTab(self.notebook, self.open_document_from_history)
+        self.notebook.add(self.history_tab, text="  🕒 Historique  ")
+        self.notebook.bind("<<NotebookTabChanged>>", lambda e: self.on_tab_changed())
 
         ttk.Label(
             self,
@@ -713,3 +1021,48 @@ class AppDevis(tk.Tk):
         btn_settings = ttk.Button(self, text="⚙ Paramètres", command=lambda: SettingsWindow(self))
         btn_settings.place(relx=1.0, rely=0.0, x=-12, y=6, anchor="ne")
         btn_settings.lift()
+
+    def on_tab_changed(self):
+        # Actualiser l'historique lors de la sélection de cet onglet
+        if self.notebook.index("current") == 2:
+            self.history_tab.refresh()
+
+    def open_document_from_history(self, doc_id):
+        doc = database.get_document_by_id(doc_id)
+        if not doc:
+            messagebox.showerror("Erreur", "Document introuvable.")
+            return
+            
+        doc_type = doc["doc_type"]
+        tab = self.tabs[doc_type]
+        
+        # Basculer vers le bon onglet (0 pour devis, 1 pour facture)
+        tab_idx = 0 if doc_type == "devis" else 1
+        self.notebook.select(tab_idx)
+        
+        # Remplir les champs
+        c_data = doc["client_data"]
+        tab.entry_num.delete(0, tk.END); tab.entry_num.insert(0, c_data.get("num", ""))
+        tab.entry_date.delete(0, tk.END); tab.entry_date.insert(0, c_data.get("date", ""))
+        tab.entry_client.delete(0, tk.END); tab.entry_client.insert(0, c_data.get("name", ""))
+        tab.entry_ice.delete(0, tk.END); tab.entry_ice.insert(0, c_data.get("ice", ""))
+        tab.entry_address.delete(0, tk.END); tab.entry_address.insert(0, c_data.get("address", ""))
+        tab.entry_phone.delete(0, tk.END); tab.entry_phone.insert(0, c_data.get("phone", ""))
+        
+        # Gérer l'auto-entrepreneur
+        is_auto = doc.get("is_auto_entrepreneur", False)
+        if hasattr(tab, "var_auto_entrepreneur"):
+            tab.var_auto_entrepreneur.set(is_auto)
+            tab._toggle_auto()
+            
+        # TVA
+        tva_pct = doc["totals_data"].get("tva_percent", config.DEFAULT_TVA)
+        if not is_auto:
+            tab.entry_tva.config(state="normal")
+            tab.entry_tva.delete(0, tk.END)
+            tab.entry_tva.insert(0, str(tva_pct))
+        
+        # Lignes
+        tab._rows_cache = doc["items_data"]
+        tab._refresh_tree()
+        tab.update_totals()

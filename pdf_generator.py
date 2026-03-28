@@ -277,7 +277,7 @@ def _section_items(items_data: list, columns: list, st: dict) -> list:
 # Section 3 : Totaux
 # ──────────────────────────────────────────
 
-def _section_totals(totals_data: dict, st: dict) -> list:
+def _section_totals(totals_data: dict, st: dict, is_auto_entrepreneur: bool = False) -> list:
     ht  = totals_data["ht"]
     pct = totals_data["tva_percent"]
     tva = totals_data["tva_val"]
@@ -286,11 +286,23 @@ def _section_totals(totals_data: dict, st: dict) -> list:
     rows = [
         [Paragraph("Total HT",          st["totals_label"]),
          Paragraph(f"{format_mad(ht)} MAD",  st["totals_value"])],
-        [Paragraph(f"TVA ({pct:.4g}%)",  st["totals_label"]),
-         Paragraph(f"{format_mad(tva)} MAD", st["totals_value"])],
-        [Paragraph("Net à payer TTC",    st["totals_label_big"]),
-         Paragraph(f"{format_mad(ttc)} MAD", st["totals_value_big"])],
     ]
+    
+    if is_auto_entrepreneur:
+        rows.append(
+            [Paragraph("TVA non applicable, art. 293 B du CGI", st["totals_label"]),
+             Paragraph("0.00 MAD", st["totals_value"])]
+        )
+    else:
+        rows.append(
+            [Paragraph(f"TVA ({pct:.4g}%)",  st["totals_label"]),
+             Paragraph(f"{format_mad(tva)} MAD", st["totals_value"])]
+        )
+        
+    rows.append(
+        [Paragraph("Net à payer TTC",    st["totals_label_big"]),
+         Paragraph(f"{format_mad(ttc)} MAD", st["totals_value_big"])]
+    )
 
     inner = Table(rows, colWidths=[45 * mm, 45 * mm])
     inner.setStyle(TableStyle([
@@ -493,7 +505,7 @@ def _draw_page(canvas, doc):
 
 def create_pdf(filename: str, client_data: dict, items_data: list,
                totals_data: dict, doc_type: str = "devis",
-               columns: list = None) -> None:
+               columns: list = None, is_auto_entrepreneur: bool = False) -> None:
     """
     Génère le PDF du devis ou de la facture.
 
@@ -522,7 +534,7 @@ def create_pdf(filename: str, client_data: dict, items_data: list,
     story = []
     story += _section_header(client_data, doc_cfg, st)
     story += _section_items(items_data, columns, st)
-    story += _section_totals(totals_data, st)
+    story += _section_totals(totals_data, st, is_auto_entrepreneur)
     story += _section_footer_block(doc_cfg, st)
 
     doc.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)

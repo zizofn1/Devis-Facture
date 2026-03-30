@@ -1109,70 +1109,121 @@ class HistoryTab(ttk.Frame):
 class UpdateWindow(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
-        self.title("🔄 Mise à jour / Updater")
-        self.geometry("450x300")
+        self.title("🔄 Mise à jour & Historique des versions")
+        self.geometry("600x500")
         self.grab_set()
         
-        ttk.Label(self, text=f"Version actuelle de l'application : {config.APP_VERSION}", 
-                  font=("Helvetica", 10, "bold")).pack(pady=(20, 10))
+        main_frame = ttk.Frame(self)
+        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
         
-        self.lbl_status = ttk.Label(self, text="")
-        self.lbl_status.pack(pady=5)
+        ttk.Label(main_frame, text=f"Version actuelle : v{config.APP_VERSION}", 
+                  font=("Helvetica", 10, "bold")).pack(anchor="w", pady=(0, 10))
         
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(fill="both", expand=True, padx=40, pady=10)
+        # ── Liste des versions (GitHub) ──
+        list_frame = ttk.LabelFrame(main_frame, text="Historique des 5 dernières versions (GitHub)")
+        list_frame.pack(fill="both", expand=True, pady=5)
         
+        columns = ("version", "date", "status")
+        self.tree = ttk.Treeview(list_frame, columns=columns, show="headings", height=5)
+        self.tree.heading("version", text="Version")
+        self.tree.heading("date", text="Date")
+        self.tree.heading("status", text="Statut")
+        self.tree.column("version", width=100)
+        self.tree.column("date", width=100)
+        self.tree.column("status", width=100)
+        
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        
+        # ── Changelog ──
+        log_frame = ttk.LabelFrame(main_frame, text="Notes de version")
+        log_frame.pack(fill="both", expand=True, pady=10)
+        self.text_log = tk.Text(log_frame, height=8, font=("Helvetica", 9), state="disabled", wrap="word")
+        self.text_log.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # ── Boutons d'action ──
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill="x", pady=5)
+        
+        self.btn_install = ttk.Button(btn_frame, text="📥 Installer la version sélectionnée", state="disabled", command=self._install_selected)
+        self.btn_install.pack(side="left", padx=5)
+        
+        self.btn_local = ttk.Button(btn_frame, text="📁 MAJ Local", command=self._do_local)
+        self.btn_local.pack(side="left", padx=5)
+        
+        ttk.Label(main_frame, text="⚠️ Vos données (factures, clients) ne seront pas touchées.", 
+                  foreground="#64748b", font=("Helvetica", 8)).pack(anchor="w", pady=5)
+        
+        self._releases = []
+        self.tree.bind("<<TreeviewSelect>>", self._on_select)
+        
+        # Chargement initial
         import threading
+        threading.Thread(target=self._load_releases, daemon=True).start()
+
+    def _load_releases(self):
         import updater
+        res = updater.get_latest_releases(config.GITHUB_REPO, limit=5)
+        if isinstance(res, list):
+            self._releases = res
+            for r in res:
+                status = "Actuelle" if r["version"] == config.APP_VERSION else "Disponible"
+                self.tree.insert("", "end", values=(f"v{r['version']}", r["date"], status))
+        else:
+            messagebox.showerror("Erreur", f"Impossible de charger les versions :\n{res}")
+
+    def _on_select(self, event):
+        sel = self.tree.selection()
+        if not sel: return
+        idx = self.tree.index(sel[0])
+        rel = self._releases[idx]
         
-        def do_online():
-            self.lbl_status.config(text="Recherche en ligne sur GitHub...", foreground="blue")
-            self.btn_online.config(state="disabled")
+        self.text_log.config(state="normal")
+        self.text_log.delete("1.0", "end")
+        self.text_log.insert("1.0", rel["changelog"])
+        self.text_log.config(state="disabled")
+        self.btn_install.config(state="normal")
+
+    def _install_selected(self):
+        sel = self.tree.selection()
+        if not sel: return
+        idx = self.tree.index(sel[0])
+        rel = self._releases[idx]
+        
+        is_rollback = False
+        try:
+            curr = float(config.APP_VERSION)
+            target = float(rel["version"])
+            if target < curr: is_rollback = True
+        except: pass
+        
+        msg = f"Confirmer l'installation de la version v{rel['version']} ?"
+        if is_rollback:
+            msg = f"⚠️ ATTENTION : Vous allez installer une version PLUS ANCIENNE (v{rel['version']}).\n\nConfirmer le retour en arrière ?"
             
-            def _task():
-                res = updater.check_online(config.APP_VERSION, config.GITHUB_REPO)
-                if isinstance(res, str):
-                    self.lbl_status.config(text=f"❌ Erreur : {res}", foreground="red")
-                elif res is None:
-                    self.lbl_status.config(text="✅ Vous disposez déjà de la dernière version !", foreground="green")
-                else:
-                    self.lbl_status.config(text=f"🆕 Nouvelle version disponible : v{res['version']}", foreground="orange")
-                    choix = messagebox.askyesno(
-                        "Mise à jour trouvée", 
-                        f"La version {res['version']} est prête.\n\n"
-                        f"Nouveautés :\n{res['changelog']}\n\nInstaller maintenant ?"
-                    )
-                    if choix:
-                        self.lbl_status.config(text="Téléchargement et application en cours...", foreground="blue")
-                        success = updater.apply_update_from_zip(res['zip_url'], os.path.dirname(__file__))
-                        if success is True:
-                            messagebox.showinfo(
-                                "Succès", 
-                                "Mise à jour téléchargée et appliquée avec succès !\n\nL'application va maintenant se fermer pour appliquer les changements. Veuillez la relancer."
-                            )
-                            # On force la fermeture pour éviter les conflits de code
-                            self.master.destroy()
-                        else:
-                            self.lbl_status.config(text="❌ Échec de la mise à jour", foreground="red")
-                            messagebox.showerror("Erreur Updater", f"Impossible d'appliquer la mise à jour :\n{success}")
-                self.btn_online.config(state="normal")
-                
-            threading.Thread(target=_task, daemon=True).start()
+        if not messagebox.askyesno("Confirmation", msg):
+            return
+            
+        import updater
+        success = updater.apply_update_from_zip(rel["zip_url"], os.path.dirname(__file__))
+        if success is True:
+            messagebox.showinfo("Succès", "Version installée !\n\nL'application va se fermer pour appliquer les changements.")
+            self.master.destroy()
+        else:
+            messagebox.showerror("Erreur", f"Échec de l'installation :\n{success}")
 
-        def do_local():
-            folder = filedialog.askdirectory(title="Sélectionner le dossier contenant les nouveaux fichiers")
-            if folder:
-                success = updater.apply_update_from_folder(folder, os.path.dirname(__file__))
-                if success is True:
-                     messagebox.showinfo("Succès", "Mise à jour locale copiée avec succès !\n\nVeuillez redémarrer l'application.")
-                     self.master.destroy()
-                else:
-                     messagebox.showerror("Erreur", f"Échec de la copie :\n{success}")
-
-        self.btn_online = ttk.Button(btn_frame, text="🌐 Vérifier en ligne (GitHub)", command=do_online)
-        self.btn_online.pack(fill="x", pady=10)
-        
-        ttk.Button(btn_frame, text="📁 Mettre à jour depuis un dossier local", command=do_local).pack(fill="x", pady=10)
+    def _do_local(self):
+        import updater
+        folder = filedialog.askdirectory(title="Dossier source de la mise à jour")
+        if folder:
+            success = updater.apply_update_from_folder(folder, os.path.dirname(__file__))
+            if success is True:
+                 messagebox.showinfo("Succès", "Mise à jour locale appliquée.\n\nVeuillez redémarrer.")
+                 self.master.destroy()
+            else:
+                 messagebox.showerror("Erreur", success)
 
 # ==========================================
 # Fenêtre principale

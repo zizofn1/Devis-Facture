@@ -17,35 +17,40 @@ def check_online(current_version, repo):
     Vérifie la dernière release sur GitHub.
     Retourne un dict avec les infos, ou None si on est à jour.
     """
-    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    res = get_latest_releases(repo, limit=1)
+    if isinstance(res, list) and len(res) > 0:
+        latest = res[0]
+        try:
+            curr = float(current_version)
+            lat = float(latest["version"])
+            if lat > curr:
+                return latest
+        except ValueError:
+            if latest["version"] != current_version:
+                return latest
+    return None
+
+def get_latest_releases(repo, limit=5):
+    """
+    Récupère les dernières releases de GitHub.
+    """
+    url = f"https://api.github.com/repos/{repo}/releases?per_page={limit}"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode())
-            tag_name = data.get("tag_name", "").lstrip("vV")
-            
-            if tag_name:
-                try:
-                    c_ver = float(current_version)
-                    n_ver = float(tag_name)
-                    if n_ver > c_ver:
-                        return {
-                            "version": tag_name,
-                            "changelog": data.get("body", "Nouvelle mise à jour disponible."),
-                            "zip_url": data.get("zipball_url")
-                        }
-                except ValueError:
-                    # Fallback sur une simple comparaison de chaines si ce n'est pas des floats
-                    if tag_name != current_version:
-                         return {
-                            "version": tag_name,
-                            "changelog": data.get("body", "Nouvelle mise à jour disponible."),
-                            "zip_url": data.get("zipball_url")
-                        }
+            releases = []
+            for item in data:
+                releases.append({
+                    "version": item.get("tag_name", "").lstrip("vV"),
+                    "date": item.get("published_at", "")[:10], # YYYY-MM-DD
+                    "changelog": item.get("body", "Aucune description."),
+                    "zip_url": item.get("zipball_url")
+                })
+            return releases
     except Exception as e:
-        logger.error(f"Erreur vérification en ligne: {e}")
-        return "Erreur de connexion"
-    return None
+        logger.error(f"Erreur récupération releases: {e}")
+        return f"Erreur de connexion : {e}"
 
 def apply_update_from_zip(zip_url, dest_dir):
     """

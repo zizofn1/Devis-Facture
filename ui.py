@@ -293,6 +293,7 @@ class DocumentTab(ttk.Frame):
                     break
                     
         self.entry_client.bind("<<ComboboxSelected>>", on_client_select)
+        self.entry_client.bind("<KeyRelease>", lambda _: self._regen_number())
 
         ttk.Button(frame, text="🔄 Générer N°",
                    command=self._regen_number).grid(row=0, column=4, padx=8)
@@ -823,26 +824,28 @@ class HelpWindow(tk.Toplevel):
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
         
         guides = {
+            "Nouveautés V3.1": (
+                "🚀 Version 3.1 — Améliorations :\n\n"
+                "- Numérotation Intelligente : Plus besoin de cliquer sur [Générer N°]. Le numéro se met à jour en temps réel dès que vous tapez le nom du client.\n\n"
+                "- Carnet Client Automatique : Les clients sont enregistrés dès que vous générez un document.\n\n"
+                "- Conversion Devis ➔ Facture : Disponible dans l'Historique via le bouton dédié.\n\n"
+                "- Sécurité MAX : Sauvegarde automatique de la base de données (Fichier data.db) tous les jours."
+            ),
             "Articles & Calculs": (
                 "- Utiliser le bouton [+ Ajouter] pour insérer un produit/service.\n\n"
                 "- [Double-Clic] sur n'importe quelle ligne pour modifier ses quantités ou son prix.\n\n"
-                "- Sélectionner une ou plusieurs lignes et cliquer sur [✕ Supprimer] pour les effacer.\n\n"
-                "- Le montant Total, la TVA, et le TTC se mettent à jour automatiquement à chaque modification."
-            ),
-            "Colonnes du Tableau": (
-                "- [Clic Droit] sur l'en-tête d'une colonne permet de l'Afficher, la Masquer du PDF, ou la Renommer.\n\n"
-                "- La Désignation et le Total HT sont obligatoires pour un Devis valide et ne peuvent être masqués.\n\n"
-                "- Utilisez [⊞ Nouvelle colonne] pour ajouter une colonne personnalisée au PDF, utile pour afficher l'Unité ou la Remise."
+                "- Boutons ↑ / ↓ : Pour réorganiser l'ordre des articles sur le PDF.\n\n"
+                "- Bouton ⧉ Dupliquer : Pour copier rapidement une ligne existante."
             ),
             "Numérotation": (
-                "- Le Numéro (N° Devis/Facture) est auto-généré sur la base du nom du Client.\n\n"
-                "- Remplissez simplement le champ 'Nom Client' et cliquez ailleurs, le numéro prendra les initiales du client automatiquement.\n\n"
-                "- Vous pouvez toujours cliquer sur [🔄 Générer N°] ou modifier le champ manuellement à votre guise."
+                "- Le numéro est auto-généré au format : PREFIX-YYMMDD-Initiales-Séquence.\n\n"
+                "- Les initiales sont extraites automatiquement de 'Prénom Nom' (ex: Zouhair Belkadi -> ZB).\n\n"
+                "- Tapez simplement le nom, le numéro s'adapte tout seul."
             ),
             "Génération PDF": (
-                "- Cliquez sur le grand bouton [📄 GÉNÉRER LA FACTURE/DEVIS] en bas à droite.\n\n"
-                "- Le système vous demandera où vous souhaitez l'enregistrer (Il propose automatiquement le nom du client avec le bon titre).\n\n"
-                "- Après l'enregistrement, l'application tentera d'ouvrir le fichier PDF immédiatement."
+                "- Cliquez sur [📄 GÉNÉRER...] en bas à droite.\n\n"
+                "- Le montant en lettres est ajouté automatiquement en bas du document.\n\n"
+                "- Le PDF s'ouvrira immédiatement après l'enregistrement."
             ),
             "FAQ & Problèmes": (
                 "❓ Problème : Le devis n'est pas enregistré lorsque je ferme l'application ?\n"
@@ -1131,7 +1134,7 @@ class AppDevis(tk.Tk):
         help_menu.add_command(label="📖 Guide d'utilisation", command=lambda: HelpWindow(self))
         help_menu.add_separator()
         from tkinter import messagebox
-        help_menu.add_command(label="À propos", command=lambda: messagebox.showinfo("À propos", f"Générateur Devis & Factures v2.0\nDéveloppé pour {config.COMPANY.get('name', 'Fun Design')}"))
+        help_menu.add_command(label="À propos", command=lambda: messagebox.showinfo("À propos", f"Générateur Devis & Factures v3.1\n\nOptimisé pour {config.COMPANY.get('name', 'Fun Design')}\n\nNouveautés 3.1 :\n- Numérotation temps réel\n- Carnet client intégré\n- Conversion Devis➔Facture\n- Montant en lettres Auto\n- Backups de sécurité"))
         
         menubar.add_cascade(label="Aide (?)", menu=help_menu)
         self.config(menu=menubar)

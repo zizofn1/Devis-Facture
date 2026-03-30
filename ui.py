@@ -1104,6 +1104,77 @@ class HistoryTab(ttk.Frame):
             self.on_open_doc(doc_id, force_type="facture")
 
 # ==========================================
+# Fenêtre : Mise à jour (Updater)
+# ==========================================
+class UpdateWindow(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("🔄 Mise à jour / Updater")
+        self.geometry("450x300")
+        self.grab_set()
+        
+        ttk.Label(self, text=f"Version actuelle de l'application : {config.APP_VERSION}", 
+                  font=("Helvetica", 10, "bold")).pack(pady=(20, 10))
+        
+        self.lbl_status = ttk.Label(self, text="")
+        self.lbl_status.pack(pady=5)
+        
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(fill="both", expand=True, padx=40, pady=10)
+        
+        import threading
+        import updater
+        
+        def do_online():
+            self.lbl_status.config(text="Recherche en ligne sur GitHub...", foreground="blue")
+            self.btn_online.config(state="disabled")
+            
+            def _task():
+                res = updater.check_online(config.APP_VERSION, config.GITHUB_REPO)
+                if isinstance(res, str):
+                    self.lbl_status.config(text=f"❌ Erreur : {res}", foreground="red")
+                elif res is None:
+                    self.lbl_status.config(text="✅ Vous disposez déjà de la dernière version !", foreground="green")
+                else:
+                    self.lbl_status.config(text=f"🆕 Nouvelle version disponible : v{res['version']}", foreground="orange")
+                    choix = messagebox.askyesno(
+                        "Mise à jour trouvée", 
+                        f"La version {res['version']} est prête.\n\n"
+                        f"Nouveautés :\n{res['changelog']}\n\nInstaller maintenant ?"
+                    )
+                    if choix:
+                        self.lbl_status.config(text="Téléchargement et application en cours...", foreground="blue")
+                        success = updater.apply_update_from_zip(res['zip_url'], os.path.dirname(__file__))
+                        if success is True:
+                            messagebox.showinfo(
+                                "Succès", 
+                                "Mise à jour téléchargée et appliquée avec succès !\n\nL'application va maintenant se fermer pour appliquer les changements. Veuillez la relancer."
+                            )
+                            # On force la fermeture pour éviter les conflits de code
+                            self.master.destroy()
+                        else:
+                            self.lbl_status.config(text="❌ Échec de la mise à jour", foreground="red")
+                            messagebox.showerror("Erreur Updater", f"Impossible d'appliquer la mise à jour :\n{success}")
+                self.btn_online.config(state="normal")
+                
+            threading.Thread(target=_task, daemon=True).start()
+
+        def do_local():
+            folder = filedialog.askdirectory(title="Sélectionner le dossier contenant les nouveaux fichiers")
+            if folder:
+                success = updater.apply_update_from_folder(folder, os.path.dirname(__file__))
+                if success is True:
+                     messagebox.showinfo("Succès", "Mise à jour locale copiée avec succès !\n\nVeuillez redémarrer l'application.")
+                     self.master.destroy()
+                else:
+                     messagebox.showerror("Erreur", f"Échec de la copie :\n{success}")
+
+        self.btn_online = ttk.Button(btn_frame, text="🌐 Vérifier en ligne (GitHub)", command=do_online)
+        self.btn_online.pack(fill="x", pady=10)
+        
+        ttk.Button(btn_frame, text="📁 Mettre à jour depuis un dossier local", command=do_local).pack(fill="x", pady=10)
+
+# ==========================================
 # Fenêtre principale
 # ==========================================
 
@@ -1133,8 +1204,10 @@ class AppDevis(tk.Tk):
         help_menu = tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="📖 Guide d'utilisation", command=lambda: HelpWindow(self))
         help_menu.add_separator()
+        help_menu.add_command(label="🔄 Rechercher une mise à jour", command=lambda: UpdateWindow(self))
+        help_menu.add_separator()
         from tkinter import messagebox
-        help_menu.add_command(label="À propos", command=lambda: messagebox.showinfo("À propos", f"Générateur Devis & Factures v3.1\n\nOptimisé pour {config.COMPANY.get('name', 'Fun Design')}\n\nNouveautés 3.1 :\n- Numérotation temps réel\n- Carnet client intégré\n- Conversion Devis➔Facture\n- Montant en lettres Auto\n- Backups de sécurité"))
+        help_menu.add_command(label="À propos", command=lambda: messagebox.showinfo("À propos", f"Générateur Devis & Factures v{config.APP_VERSION}\n\nOptimisé pour {config.COMPANY.get('name', 'Fun Design')}\n\nSystème de mise à jour intégré avec GitHub (v3.2)."))
         
         menubar.add_cascade(label="Aide (?)", menu=help_menu)
         self.config(menu=menubar)

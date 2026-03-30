@@ -1,4 +1,0 @@
---- test_devis_final.pdf ---
-error no such file: 'test_devis_final.pdf'
---- test_2pages.pdf ---
-error no such file: 'test_2pages.pdf'

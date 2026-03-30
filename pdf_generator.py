@@ -15,6 +15,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
 
 from config import COMPANY, COLORS, DOC_TYPES
+from number_to_letters import amount_to_letters
 
 
 # ──────────────────────────────────────────
@@ -282,12 +283,20 @@ def _section_totals(totals_data: dict, st: dict, is_auto_entrepreneur: bool = Fa
     pct = totals_data["tva_percent"]
     tva = totals_data["tva_val"]
     ttc = totals_data["ttc"]
+    remise = totals_data.get("remise", 0.0)
 
     rows = [
         [Paragraph("Total HT",          st["totals_label"]),
          Paragraph(f"{format_mad(ht)} MAD",  st["totals_value"])],
     ]
     
+    if remise > 0:
+        rows.append(
+            [Paragraph("Remise Globale",    st["totals_label"]),
+             Paragraph(f"- {format_mad(remise)} MAD", st["totals_value"])]
+        )
+    
+    ht_net = totals_data.get("ht_net", ht)
     if is_auto_entrepreneur:
         rows.append(
             [Paragraph("TVA non applicable, art. 293 B du CGI", st["totals_label"]),
@@ -332,19 +341,26 @@ def _section_totals(totals_data: dict, st: dict, is_auto_entrepreneur: bool = Fa
 # (toujours groupées ensemble — KeepTogether)
 # ──────────────────────────────────────────
 
-def _section_footer_block(doc_cfg: dict, st: dict) -> list:
+def _section_footer_block(doc_cfg: dict, st: dict, totals_data: dict) -> list:
     """
-    Bloc bas de page : conditions + paiement + zone de signature.
+    Bloc bas de page : conditions + paiement + zone de signature + montant en lettres.
     KeepTogether empêche de couper ce bloc sur plusieurs pages.
-    Si le bloc ne tient pas sur la page courante, ReportLab le bascule
-    entièrement à la page suivante — c'est le comportement voulu.
     """
 
     # ── Ligne séparatrice ──
     hr = HRFlowable(
         width="100%", thickness=0.5,
         color=colors.HexColor(COLORS["border"]),
-        spaceAfter=4 * mm, spaceBefore=0,
+        spaceAfter=3 * mm, spaceBefore=0,
+    )
+
+    # ── Montant en lettres ──
+    text_lettres = amount_to_letters(totals_data.get("ttc", 0.0))
+    lbl_text = "Arrêtée la présente facture à la somme de :" if doc_cfg["prefix"] == "FAC" else "Arrêté le présent devis à la somme de :"
+    
+    letters_block = Paragraph(
+        f"<i>{lbl_text}</i><br/><b>{text_lettres} TTC</b>",
+        ParagraphStyle("Lettres", fontName="Helvetica", fontSize=9, textColor=colors.HexColor(COLORS["dark"]), spaceAfter=8*mm)
     )
 
     # ── Conditions générales ──
@@ -410,7 +426,7 @@ def _section_footer_block(doc_cfg: dict, st: dict) -> list:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
 
-    inner = [hr, cond_table, Spacer(1, 5 * mm), sign_table]
+    inner = [hr, letters_block, cond_table, Spacer(1, 5 * mm), sign_table]
     return [KeepTogether(inner)]
 
 
@@ -535,6 +551,6 @@ def create_pdf(filename: str, client_data: dict, items_data: list,
     story += _section_header(client_data, doc_cfg, st)
     story += _section_items(items_data, columns, st)
     story += _section_totals(totals_data, st, is_auto_entrepreneur)
-    story += _section_footer_block(doc_cfg, st)
+    story += _section_footer_block(doc_cfg, st, totals_data)
 
     doc.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)

@@ -11,10 +11,9 @@ from datetime import datetime
 
 import config
 from config import COMPANY, DOC_TYPES, DEFAULT_COLUMNS
-from config import save_settings
+from config import save_settings, load_columns, save_columns
 from pdf_generator import create_pdf
 from numerotation import generate_number
-from settings import load_columns, save_columns
 import database
 from tkinter import colorchooser
 import csv
@@ -260,17 +259,40 @@ class DocumentTab(ttk.Frame):
             e.grid(row=row, column=1, padx=5, pady=5)
             setattr(self, attr, e)
 
+        ttk.Label(frame, text="Nom Client :").grid(row=0, column=2, padx=5, pady=5, sticky="e")
+        self.entry_client = ttk.Combobox(frame, width=28)
+        self.entry_client.grid(row=0, column=3, padx=5, pady=5)
+        
         right_fields = [
-            ("Nom Client :", "entry_client",  ""),
             ("ICE Client :", "entry_ice",     ""),
             ("Adresse :",    "entry_address", ""),
         ]
-        for row, (label, attr, default) in enumerate(right_fields):
+        for row, (label, attr, default) in enumerate(right_fields, start=1):
             ttk.Label(frame, text=label).grid(row=row, column=2, padx=5, pady=5, sticky="e")
             e = ttk.Entry(frame, width=30)
             e.insert(0, default)
             e.grid(row=row, column=3, padx=5, pady=5)
             setattr(self, attr, e)
+            
+        # Hook for autocompletion
+        self._all_clients = database.get_all_clients()
+        self.entry_client['values'] = [c["name"] for c in self._all_clients]
+        
+        def on_client_select(event):
+            name = self.entry_client.get()
+            for c in self._all_clients:
+                if c["name"] == name:
+                    self.entry_ice.delete(0, tk.END); self.entry_ice.insert(0, c["ice"] or "")
+                    self.entry_address.delete(0, tk.END); self.entry_address.insert(0, c["address"] or "")
+                    
+                    if hasattr(self, "entry_phone"):
+                        self.entry_phone.delete(0, tk.END)
+                        self.entry_phone.insert(0, c["phone"] or "")
+                    
+                    self._regen_number()
+                    break
+                    
+        self.entry_client.bind("<<ComboboxSelected>>", on_client_select)
 
         ttk.Button(frame, text="🔄 Générer N°",
                    command=self._regen_number).grid(row=0, column=4, padx=8)
@@ -284,24 +306,37 @@ class DocumentTab(ttk.Frame):
 
         btn_frame = ttk.Frame(self._items_frame)
         btn_frame.pack(fill="x", padx=5, pady=5)
-        ttk.Button(btn_frame, text="+ Ajouter",    command=self._add_row).pack(side="left", padx=4)
-        ttk.Button(btn_frame, text="✎ Modifier",    command=self._edit_row).pack(side="left", padx=4)
-        ttk.Button(btn_frame, text="✕ Supprimer",   command=self._delete_row).pack(side="left", padx=4)
-        ttk.Separator(btn_frame, orient="vertical").pack(side="left", fill="y", padx=8)
-        ttk.Button(btn_frame, text="⊞ Nouvelle colonne", command=self._add_column).pack(side="left", padx=4)
+        ttk.Button(btn_frame, text="+ Ajouter",    command=self._add_row).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="✎ Modifier",    command=self._edit_row).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="✕ Supprimer",   command=self._delete_row).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="↑ Monter",      command=self._move_up).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="↓ Descendre",   command=self._move_down).pack(side="left", padx=2)
+        ttk.Button(btn_frame, text="⧉ Dupliquer",   command=self._duplicate_row).pack(side="left", padx=2)
+        ttk.Separator(btn_frame, orient="vertical").pack(side="left", fill="y", padx=6)
+        ttk.Button(btn_frame, text="⊞ Colonne", command=self._add_column).pack(side="left", padx=2)
 
-        ttk.Label(btn_frame, text="TVA (%) :").pack(side="left", padx=(30, 4))
-        self.entry_tva = ttk.Entry(btn_frame, width=5)
+        # Zone Droite : TVA et Remise
+        options_frame = ttk.Frame(self._items_frame)
+        options_frame.pack(fill="x", padx=5, pady=2, anchor="e")
+        
+        ttk.Label(options_frame, text="Remise (MAD) :").pack(side="right", padx=(10, 2))
+        self.entry_remise = ttk.Entry(options_frame, width=8)
+        self.entry_remise.insert(0, "0.00")
+        self.entry_remise.pack(side="right")
+        self.entry_remise.bind("<KeyRelease>", lambda _: self.update_totals())
+
+        ttk.Label(options_frame, text="TVA (%) :").pack(side="right", padx=(20, 2))
+        self.entry_tva = ttk.Entry(options_frame, width=5)
         self.entry_tva.insert(0, str(config.DEFAULT_TVA))
-        self.entry_tva.pack(side="left")
+        self.entry_tva.pack(side="right")
         self.entry_tva.bind("<KeyRelease>", lambda _: self.update_totals())
 
         self.var_auto_entrepreneur = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            btn_frame, text="Exonéré de TVA (0%)", 
+            options_frame, text="Exonéré de TVA (0%)", 
             variable=self.var_auto_entrepreneur, 
             command=self._toggle_auto
-        ).pack(side="left", padx=(15, 4))
+        ).pack(side="right", padx=(15, 4))
 
     def _toggle_auto(self):
         if self.var_auto_entrepreneur.get():
@@ -372,10 +407,23 @@ class DocumentTab(ttk.Frame):
             "address": self.entry_address.get() or "-",
             "phone":   self.entry_phone.get()   or "-",
         }
+        
+        # Validation
+        if client_data["name"] == "-" or client_data["name"] == "":
+            if show_msg: messagebox.showwarning("Attention", "Le Nom du Client est obligatoire.")
+            return False
+
         if not self._rows_cache:
             if show_msg: messagebox.showwarning("Attention", "Ajoutez au moins un article.")
             return False
             
+        # Sauvegarde client en base
+        database.save_client(client_data["name"], client_data["ice"], client_data["address"], client_data["phone"], "")
+        
+        # Rafraichir la liste locale des clients
+        self._all_clients = database.get_all_clients()
+        self.entry_client['values'] = [c["name"] for c in self._all_clients]
+
         items_data = []
         for row in self._rows_cache:
             item = dict(row)
@@ -386,8 +434,8 @@ class DocumentTab(ttk.Frame):
                     item[k] = 0.0
             items_data.append(item)
             
-        ht, tva_pct, tva_val, ttc = self.update_totals()
-        totals_data = {"ht": ht, "tva_percent": tva_pct, "tva_val": tva_val, "ttc": ttc}
+        ht, tva_pct, tva_val, ttc, remise = self.update_totals()
+        totals_data = {"ht": ht, "tva_percent": tva_pct, "tva_val": tva_val, "ttc": ttc, "remise": remise, "ht_net": ht - remise}
         is_auto = getattr(self, 'var_auto_entrepreneur', None)
         is_auto_val = is_auto.get() if is_auto else False
         
@@ -481,6 +529,32 @@ class DocumentTab(ttk.Frame):
             self.tree.delete(item)
         self.update_totals()
 
+    def _move_up(self):
+        selected = self.tree.selection()
+        if not selected: return
+        for item in selected:
+            idx = self.tree.index(item)
+            if idx > 0:
+                self.tree.move(item, self.tree.parent(item), idx - 1)
+                self._rows_cache[idx], self._rows_cache[idx-1] = self._rows_cache[idx-1], self._rows_cache[idx]
+
+    def _move_down(self):
+        selected = reversed(self.tree.selection())
+        for item in selected:
+            idx = self.tree.index(item)
+            if idx < len(self.tree.get_children()) - 1:
+                self.tree.move(item, self.tree.parent(item), idx + 1)
+                self._rows_cache[idx], self._rows_cache[idx+1] = self._rows_cache[idx+1], self._rows_cache[idx]
+
+    def _duplicate_row(self):
+        selected = self.tree.selection()
+        if not selected: return
+        idx = self.tree.index(selected[0])
+        item_copy = dict(self._rows_cache[idx])
+        self._rows_cache.insert(idx + 1, item_copy)
+        self._refresh_tree()
+        self.update_totals()
+
     # ── Colonnes : clic droit ──────────────────────────────────────
 
     def _on_header_right_click(self, event):
@@ -519,12 +593,19 @@ class DocumentTab(ttk.Frame):
 
     def update_totals(self):
         """
-        Calcule HT depuis _rows_cache (toujours fiable, indépendant des colonnes visibles).
+        Calcule HT depuis _rows_cache. Applique la remise globale puis calcule TVA.
         """
         ht = sum(
             float(str(row.get("total", 0)).replace(" ", "").replace(",", ".") or 0)
             for row in self._rows_cache
         )
+        try:
+            remise = float(str(self.entry_remise.get()).replace(" ", "").replace(",", ".") or 0)
+        except ValueError:
+            remise = 0.0
+            
+        ht_net = max(0.0, ht - remise)
+
         try:
             if hasattr(self, 'var_auto_entrepreneur') and self.var_auto_entrepreneur.get():
                 tva_pct = 0.0
@@ -533,12 +614,12 @@ class DocumentTab(ttk.Frame):
         except ValueError:
             tva_pct = float(config.DEFAULT_TVA)
 
-        tva_val = ht * (tva_pct / 100)
-        ttc     = ht + tva_val
+        tva_val = ht_net * (tva_pct / 100)
+        ttc     = ht_net + tva_val
         self.lbl_totals.config(
-            text=(f"Total HT : {_format_thousands(ht)} MAD  |  TVA : {_format_thousands(tva_val)} MAD  |  TTC : {_format_thousands(ttc)} MAD")
+            text=(f"Total HT : {_format_thousands(ht)} MAD  |  Remise : {_format_thousands(remise)} MAD  |  TVA : {_format_thousands(tva_val)} MAD  |  TTC : {_format_thousands(ttc)} MAD")
         )
-        return ht, tva_pct, tva_val, ttc
+        return ht, tva_pct, tva_val, ttc, remise
 
     # ── Génération PDF ────────────────────────────────────────────
 
@@ -567,8 +648,8 @@ class DocumentTab(ttk.Frame):
                     item[k] = 0.0
             items_data.append(item)
 
-        ht, tva_pct, tva_val, ttc = self.update_totals()
-        totals_data = {"ht": ht, "tva_percent": tva_pct, "tva_val": tva_val, "ttc": ttc}
+        ht, tva_pct, tva_val, ttc, remise = self.update_totals()
+        totals_data = {"ht": ht, "tva_percent": tva_pct, "tva_val": tva_val, "ttc": ttc, "remise": remise, "ht_net": ht - remise}
         is_auto = getattr(self, 'var_auto_entrepreneur', None)
         is_auto_val = is_auto.get() if is_auto else False
 
@@ -788,6 +869,45 @@ class HelpWindow(tk.Toplevel):
 
 
 # ==========================================
+# Fenêtre : Clients
+# ==========================================
+
+class ClientsTab(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        
+        top_bar = ttk.Frame(self)
+        top_bar.pack(fill="x", padx=10, pady=(10, 5))
+        ttk.Button(top_bar, text="🔄 Actualiser", command=self.refresh).pack(side="left", padx=5)
+        
+        self.tree = ttk.Treeview(self, columns=("name", "ice", "address", "phone", "email"), show="headings")
+        self.tree.heading("name", text="Nom Client")
+        self.tree.heading("ice", text="ICE")
+        self.tree.heading("address", text="Adresse")
+        self.tree.heading("phone", text="Téléphone")
+        self.tree.heading("email", text="Email")
+        
+        self.tree.column("name", width=150)
+        self.tree.column("ice", width=120)
+        self.tree.column("address", width=200)
+        self.tree.column("phone", width=100)
+        self.tree.column("email", width=150)
+        
+        scroll = ttk.Scrollbar(self, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        
+        self.tree.pack(fill="both", expand=True, padx=10, pady=(0, 10), side="left")
+        scroll.pack(fill="y", side="right", padx=(0,10), pady=(0, 10))
+        self.refresh()
+        
+    def refresh(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        clients = database.get_all_clients()
+        for c in clients:
+            self.tree.insert("", "end", values=(c["name"], c["ice"], c["address"], c["phone"], c["email"]))
+
+# ==========================================
 # Fenêtre : Historique
 # ==========================================
 class HistoryTab(ttk.Frame):
@@ -801,6 +921,7 @@ class HistoryTab(ttk.Frame):
         ttk.Button(top_bar, text="🔄 Actualiser", command=self.refresh).pack(side="left", padx=5)
         ttk.Button(top_bar, text="📂 Ouvrir", command=self.open_selected).pack(side="left", padx=5)
         ttk.Button(top_bar, text="✕ Supprimer", command=self.delete_selected).pack(side="left", padx=5)
+        ttk.Button(top_bar, text="📝 Convertir en Facture", command=self.convert_to_invoice).pack(side="left", padx=5)
         ttk.Button(top_bar, text="📊 Exporter Excel", command=self.export_to_excel).pack(side="left", padx=5)
         
         filter_bar = ttk.LabelFrame(self, text="Filtres de recherche")
@@ -967,6 +1088,18 @@ class HistoryTab(ttk.Frame):
             database.delete_document(doc_id)
             self.refresh()
 
+    def convert_to_invoice(self):
+        sel = self.tree.selection()
+        if not sel: return
+        doc_id = self.tree.item(sel[0])["values"][0]
+        doc = database.get_document_by_id(doc_id)
+        if not doc or doc["doc_type"] != "devis":
+            messagebox.showinfo("Info", "Seul un devis peut être converti en facture.")
+            return
+        
+        if messagebox.askyesno("Convertir", "Créer une facture à partir de ce devis ?"):
+            self.on_open_doc(doc_id, force_type="facture")
+
 # ==========================================
 # Fenêtre principale
 # ==========================================
@@ -1015,6 +1148,9 @@ class AppDevis(tk.Tk):
             self.tabs[doc_type] = tab
             self.notebook.add(tab, text=f"  {config.DOC_TYPES[doc_type]['label']}  ")
 
+        self.clients_tab = ClientsTab(self.notebook)
+        self.notebook.add(self.clients_tab, text="  👥 Clients  ")
+
         self.history_tab = HistoryTab(self.notebook, self.open_document_from_history)
         self.notebook.add(self.history_tab, text="  🕒 Historique  ")
         self.notebook.bind("<<NotebookTabChanged>>", lambda e: self.on_tab_changed())
@@ -1031,31 +1167,42 @@ class AppDevis(tk.Tk):
         btn_settings.lift()
 
     def on_tab_changed(self):
-        # Actualiser l'historique lors de la sélection de cet onglet
-        if self.notebook.index("current") == 2:
+        # Actualiser l'historique et les clients lors de la sélection de cet onglet
+        current = self.notebook.index("current")
+        if current == 2:
+            self.clients_tab.refresh()
+        elif current == 3:
             self.history_tab.refresh()
 
-    def open_document_from_history(self, doc_id):
+    def open_document_from_history(self, doc_id, force_type=None):
         doc = database.get_document_by_id(doc_id)
         if not doc:
             messagebox.showerror("Erreur", "Document introuvable.")
             return
             
         doc_type = doc["doc_type"]
-        tab = self.tabs[doc_type]
+        target_type = force_type if force_type else doc_type
+        tab = self.tabs[target_type]
         
-        # Basculer vers le bon onglet (0 pour devis, 1 pour facture)
-        tab_idx = 0 if doc_type == "devis" else 1
+        tab_idx = 0 if target_type == "devis" else 1
         self.notebook.select(tab_idx)
         
         # Remplir les champs
         c_data = doc["client_data"]
-        tab.entry_num.delete(0, tk.END); tab.entry_num.insert(0, c_data.get("num", ""))
-        tab.entry_date.delete(0, tk.END); tab.entry_date.insert(0, c_data.get("date", ""))
         tab.entry_client.delete(0, tk.END); tab.entry_client.insert(0, c_data.get("name", ""))
         tab.entry_ice.delete(0, tk.END); tab.entry_ice.insert(0, c_data.get("ice", ""))
         tab.entry_address.delete(0, tk.END); tab.entry_address.insert(0, c_data.get("address", ""))
-        tab.entry_phone.delete(0, tk.END); tab.entry_phone.insert(0, c_data.get("phone", ""))
+        
+        if hasattr(tab, "entry_phone"):
+            tab.entry_phone.delete(0, tk.END); tab.entry_phone.insert(0, c_data.get("phone", ""))
+        
+        if force_type:
+            # Conversion : nouveau N° et date du jour
+            tab.entry_date.delete(0, tk.END); tab.entry_date.insert(0, datetime.now().strftime("%d/%m/%Y"))
+            tab._regen_number()
+        else:
+            tab.entry_num.delete(0, tk.END); tab.entry_num.insert(0, c_data.get("num", ""))
+            tab.entry_date.delete(0, tk.END); tab.entry_date.insert(0, c_data.get("date", ""))
         
         # Gérer l'auto-entrepreneur
         is_auto = doc.get("is_auto_entrepreneur", False)

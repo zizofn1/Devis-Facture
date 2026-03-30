@@ -98,7 +98,10 @@ DEFAULT_COLUMNS = [
 # ==========================================
 # GESTION DES PARAMETRES (SETTINGS)
 # ==========================================
-SETTINGS_FILE = os.path.join(os.path.dirname(__file__), 'app_settings.json')
+# ==========================================
+# GESTION DES PARAMETRES (SETTINGS)
+# ==========================================
+SETTINGS_FILE = os.path.join(os.path.dirname(__file__), 'settings.json')
 
 def load_settings():
     global DEVIS_VALIDITY_DAYS, DEFAULT_TVA
@@ -125,20 +128,81 @@ def load_settings():
         print("Erreur chargement settings:", e)
 
 def save_settings():
-    data = {
+    # Toujours lire d'abord pour ne pas écraser les autres clés (comme 'columns')
+    data = {}
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            pass
+            
+    data.update({
         'COMPANY': COMPANY,
         'COLORS': COLORS,
         'CONDITIONS_DEVIS': DOC_TYPES['devis'].get('conditions', []),
         'CONDITIONS_FACTURE': DOC_TYPES['facture'].get('conditions', []),
         'DEVIS_VALIDITY_DAYS': DEVIS_VALIDITY_DAYS,
         'DEFAULT_TVA': DEFAULT_TVA,
-    }
+    })
     try:
         with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
         print("Paramètres enregistrés avec succès.")
     except Exception as e:
         print("Erreur sauvegarde settings:", e)
+
+import copy
+
+def load_columns() -> list[dict]:
+    if not os.path.exists(SETTINGS_FILE):
+        return copy.deepcopy(DEFAULT_COLUMNS)
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            saved = json.load(f).get("columns", [])
+        saved_map = {c["key"]: c for c in saved}
+        merged = []
+        for col in DEFAULT_COLUMNS:
+            base = copy.deepcopy(col)
+            if col["key"] in saved_map:
+                base["label"]   = saved_map[col["key"]].get("label",   col["label"])
+                base["visible"] = saved_map[col["key"]].get("visible", col["visible"])
+            merged.append(base)
+        # Ajouter les colonnes custom non-existantes dans DEFAULT_COLUMNS
+        default_keys = {c["key"] for c in DEFAULT_COLUMNS}
+        for c in saved:
+            if c["key"] not in default_keys:
+                c["custom"] = True
+                if "width" not in c: c["width"] = 100
+                if "pdf_mm" not in c: c["pdf_mm"] = 26
+                if "anchor" not in c: c["anchor"] = "w"
+                merged.append(c)
+        return merged
+    except (json.JSONDecodeError, KeyError):
+        return copy.deepcopy(DEFAULT_COLUMNS)
+
+def save_columns(columns: list[dict]) -> None:
+    data = {}
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception:
+            pass
+            
+    # Ne sauvegarder que les infos essentielles des colonnes
+    data["columns"] = []
+    for c in columns:
+        save_col = {"key": c["key"], "label": c["label"], "visible": c["visible"]}
+        if c.get("custom"):
+            save_col.update({"custom": True, "width": c.get("width", 100), "pdf_mm": c.get("pdf_mm", 26), "anchor": c.get("anchor", "w")})
+        data["columns"].append(save_col)
+        
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print("Erreur sauvegarde colonnes:", e)
 
 # On charge automatiquement au démarrage
 load_settings()

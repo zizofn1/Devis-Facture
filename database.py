@@ -1,16 +1,43 @@
 import sqlite3
 import json
 import os
+import shutil
 from datetime import datetime
+from logger import get_logger
+
+logger = get_logger("database")
 
 # Chemin vers la base de données
 DB_PATH = os.path.join(os.path.dirname(__file__), "data.db")
 
 def _get_connection():
-    return sqlite3.connect(DB_PATH)
+    # check_same_thread=False is generally safe for SQLite in UI apps like this
+    conn = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
+    # Use WAL mode for better concurrency
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
+
+def _backup_db():
+    if not os.path.exists(DB_PATH):
+        return
+    backup_dir = os.path.join(os.path.dirname(__file__), "backups")
+    if not os.path.exists(backup_dir):
+        os.makedirs(backup_dir)
+    backup_path = os.path.join(backup_dir, f"data_backup_{datetime.now().strftime('%Y%m%d')}.db")
+    if not os.path.exists(backup_path):
+        try:
+            shutil.copy2(DB_PATH, backup_path)
+            # Retain only last 7 days of backups
+            backups = sorted([f for f in os.listdir(backup_dir) if f.startswith("data_backup_")], reverse=True)
+            for old in backups[7:]:
+                os.remove(os.path.join(backup_dir, old))
+            logger.info(f"Database backup created: {backup_path}")
+        except Exception as e:
+            logger.error(f"Database backup failed: {e}")
 
 def init_db():
     """Initialise la base de données et crée la table documents si elle n'existe pas."""
+    _backup_db()
     conn = _get_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -32,6 +59,31 @@ def init_db():
     ''')
     # Pour des recherches rapides
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_doc_type_num ON documents(doc_type, doc_num)')
+
+    # Table Clients
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            ice TEXT,
+            address TEXT,
+            phone TEXT,
+            email TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_name ON clients(name)')
+
+    # Table Sequences pour numérotation auto
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sequences (
+            doc_type TEXT PRIMARY KEY,
+            last_number INTEGER DEFAULT 0
+        )
+    ''')
+    cursor.execute('INSERT OR IGNORE INTO sequences (doc_type, last_number) VALUES ("devis", 0)')
+    cursor.execute('INSERT OR IGNORE INTO sequences (doc_type, last_number) VALUES ("facture", 0)')
+
     conn.commit()
     conn.close()
 
@@ -75,6 +127,8 @@ def save_document(doc_type: str, doc_num: str, doc_date: str, client_name: str,
         ''', (doc_type, doc_num, doc_date, client_name, total_ht, total_ttc, is_auto,
               client_json, items_json, columns_json, totals_json))
         doc_id = cursor.lastrowid
+        # Update sequence within the same transaction to avoid locking
+        cursor.execute("UPDATE sequences SET last_number = last_number + 1 WHERE doc_type = ?", (doc_type,))
         
     conn.commit()
     conn.close()
@@ -146,8 +200,72 @@ def delete_document(doc_id: int):
     conn.commit()
     conn.close()
 
+# ==========================================
+# CLIENTS
+# ==========================================
+
+def save_client(name: str, ice: str = "", address: str = "", phone: str = "", email: str = ""):
+    """Enregistre ou met à jour un client (basé sur le nom)."""
+    if not name or name.strip() == "" or name.strip() == "-":
+        return
+        
+    conn = _get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id FROM clients WHERE name = ?", (name.strip(),))
+    row = cursor.fetchone()
+    
+    if row:
+        cursor.execute('''
+            UPDATE clients SET ice = ?, address = ?, phone = ?, email = ?
+            WHERE id = ?
+        ''', (ice, address, phone, email, row[0]))
+    else:
+        cursor.execute('''
+            INSERT INTO clients (name, ice, address, phone, email)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (name.strip(), ice, address, phone, email))
+        
+    conn.commit()
+    conn.close()
+
+def get_all_clients() -> list[dict]:
+    """Récupère tous les clients."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, ice, address, phone, email FROM clients ORDER BY name ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [{
+        "id": r[0], "name": r[1], "ice": r[2], 
+        "address": r[3], "phone": r[4], "email": r[5]
+    } for r in rows]
+
+# ==========================================
+# SEQUENCES
+# ==========================================
+
+def peek_next_sequence(doc_type: str) -> int:
+    """Récupère le prochain numéro sans l'incrémenter."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT last_number FROM sequences WHERE doc_type = ?", (doc_type,))
+    row = cursor.fetchone()
+    conn.close()
+    return (row[0] + 1) if row else 1
+
+def consume_sequence(doc_type: str):
+    """Incrémente la séquence pour le type donné."""
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE sequences SET last_number = last_number + 1 WHERE doc_type = ?", (doc_type,))
+    conn.commit()
+    conn.close()
+
 # Toujours initialiser la base lors de l'import
 try:
     init_db()
 except Exception as e:
+    logger.error(f"Erreur init_db: {e}")
     print(f"Erreur init_db: {e}")

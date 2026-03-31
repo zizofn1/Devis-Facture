@@ -125,13 +125,8 @@ def apply_update_exe(exe_url):
         with open(bat_path, "w") as f:
             f.write("\n".join(lines))
             
-        import subprocess
-        # IMPORTANT : ne pas passer bat_path dans la string du 'start', utiliser Popen kwargs correctement
-        subprocess.Popen(
-            ["cmd", "/c", 'start', '""', '"' + bat_path + '"'],
-            shell=True,
-            creationflags=subprocess.CREATE_NEW_CONSOLE
-        )
+        # Lancement natif Windows fiable
+        os.startfile(bat_path)
         return True
     except Exception as e:
         logger.error(f"Erreur update EXE: {e}")
@@ -192,7 +187,7 @@ def _copy_py_files(src, dst):
             f.write("\n".join(lines))
         
         # Lancer le script en arrière-plan (après fermeture de l'app)
-        import subprocess
-        subprocess.Popen(["cmd", "/c", "start", "/min", "", bat_path],
-                         shell=False, close_fds=True)
+        # Lancement natif Windows fiable
+        import os
+        os.startfile(bat_path)
         logger.info(f"Script apply_update.bat lancé ({len(pending)} fichiers à installer).")

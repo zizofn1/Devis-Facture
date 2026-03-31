@@ -1311,9 +1311,17 @@ class AppDevis(tk.Tk):
         
         # Définir l'icône de l'application
         try:
-            icon_path = config.resource_path("logo.ico")
-            if os.path.exists(icon_path):
-                self.iconbitmap(icon_path)
+            # Essayer plusieurs chemins possibles
+            possible_paths = [
+                config.resource_path("logo.ico"),
+                os.path.join(os.path.dirname(sys.executable), "logo.ico"),
+                os.path.join(os.path.dirname(sys.executable), "_internal", "logo.ico"),
+                "logo.ico"
+            ]
+            for p in possible_paths:
+                if os.path.exists(p):
+                    self.iconbitmap(p)
+                    break
         except Exception:
             pass
 

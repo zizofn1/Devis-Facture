@@ -1,10 +1,10 @@
 [Setup]
 AppName=Devis-Facture F&Z
-AppVersion=3.5
-DefaultDirName=C:\Devis-Facture FZ
+AppVersion=3.5.0
+DefaultDirName=C:\Devis-Facture
 DefaultGroupName=Devis-Facture F&Z
 OutputDir=dist
-OutputBaseFilename=DevisFacture_Setup_v3.5
+OutputBaseFilename=DevisFacture_Setup
 Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
@@ -16,6 +16,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "dist\Devis-Facture-FZ\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Copier logo.ico aussi à la racine pour les raccourcis Windows
+Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Devis-Facture F&Z"; Filename: "{app}\Devis-Facture F&Z.exe"; IconFilename: "{app}\logo.ico"

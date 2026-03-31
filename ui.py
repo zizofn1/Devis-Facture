@@ -400,8 +400,13 @@ class DocumentTab(ttk.Frame):
         ).pack(side="right", ipadx=10, ipady=8)
 
     def save_to_db(self, show_msg=True):
+        num_doc = self.entry_num.get().strip()
+        if not num_doc or num_doc == "XXX":
+            messagebox.showwarning("Attention", "Veuillez générer ou saisir un numéro de document valide.")
+            return False
+
         client_data = {
-            "num":     self.entry_num.get()     or "XXX",
+            "num":     num_doc,
             "date":    self.entry_date.get()    or "-",
             "name":    self.entry_client.get()  or "-",
             "ice":     self.entry_ice.get()     or "-",
@@ -625,8 +630,13 @@ class DocumentTab(ttk.Frame):
     # ── Génération PDF ────────────────────────────────────────────
 
     def generate(self):
+        num_doc = self.entry_num.get().strip()
+        if not num_doc or num_doc == "XXX":
+            messagebox.showwarning("Attention", "Veuillez générer ou saisir un numéro de document valide.")
+            return
+            
         client_data = {
-            "num":     self.entry_num.get()     or "XXX",
+            "num":     num_doc,
             "date":    self.entry_date.get()    or "-",
             "name":    self.entry_client.get()  or "-",
             "ice":     self.entry_ice.get()     or "-",
@@ -700,7 +710,9 @@ class SettingsWindow(tk.Toplevel):
             icon_path = config.resource_path("logo.ico")
             if os.path.exists(icon_path):
                 self.iconbitmap(icon_path)
-        except: pass
+        except Exception as e:
+            from logger import get_logger
+            get_logger("ui").warning(f"Impossible de charger le logo: {e}")
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
@@ -830,14 +842,17 @@ class HelpWindow(tk.Toplevel):
             icon_path = config.resource_path("logo.ico")
             if os.path.exists(icon_path):
                 self.iconbitmap(icon_path)
-        except: pass
+        except Exception as e:
+            from logger import get_logger
+            get_logger("ui").warning(f"Impossible de charger le logo: {e}")
         
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
         
         guides = {
-            "Nouveautés V3.1": (
-                "🚀 Version 3.1 — Améliorations :\n\n"
+            "Nouveautés V3.3": (
+                "🚀 Version 3.3 — Améliorations :\n\n"
+                "- Rollback & Historique : Vous pouvez consulter les anciennes versions et revenir en arrière.\n\n"
                 "- Numérotation Intelligente : Plus besoin de cliquer sur [Générer N°]. Le numéro se met à jour en temps réel dès que vous tapez le nom du client.\n\n"
                 "- Carnet Client Automatique : Les clients sont enregistrés dès que vous générez un document.\n\n"
                 "- Conversion Devis ➔ Facture : Disponible dans l'Historique via le bouton dédié.\n\n"
@@ -1129,7 +1144,9 @@ class UpdateWindow(tk.Toplevel):
             icon_path = config.resource_path("logo.ico")
             if os.path.exists(icon_path):
                 self.iconbitmap(icon_path)
-        except: pass
+        except Exception as e:
+            from logger import get_logger
+            get_logger("ui").warning(f"Impossible de charger le logo: {e}")
         
         main_frame = ttk.Frame(self)
         main_frame.pack(fill="both", expand=True, padx=15, pady=15)
@@ -1184,13 +1201,16 @@ class UpdateWindow(tk.Toplevel):
     def _load_releases(self):
         import updater
         res = updater.get_latest_releases(config.GITHUB_REPO, limit=5)
-        if isinstance(res, list):
-            self._releases = res
-            for r in res:
-                status = "Actuelle" if r["version"] == config.APP_VERSION else "Disponible"
-                self.tree.insert("", "end", values=(f"v{r['version']}", r["date"], status))
-        else:
-            messagebox.showerror("Erreur", f"Impossible de charger les versions :\n{res}")
+        
+        def update_ui():
+            if isinstance(res, list):
+                self._releases = res
+                for r in res:
+                    status = "Actuelle" if r["version"] == config.APP_VERSION else "Disponible"
+                    self.tree.insert("", "end", values=(f"v{r['version']}", r["date"], status))
+            else:
+                messagebox.showerror("Erreur", f"Impossible de charger les versions :\n{res}")
+        self.after(0, update_ui)
 
     def _on_select(self, event):
         sel = self.tree.selection()
@@ -1215,7 +1235,8 @@ class UpdateWindow(tk.Toplevel):
             curr = float(config.APP_VERSION)
             target = float(rel["version"])
             if target < curr: is_rollback = True
-        except: pass
+        except ValueError:
+            pass
         
         msg = f"Confirmer l'installation de la version v{rel['version']} ?"
         if is_rollback:

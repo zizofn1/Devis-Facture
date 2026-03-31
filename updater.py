@@ -85,8 +85,8 @@ def apply_update_from_zip(zip_url, dest_dir):
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
-            except:
-                pass
+            except Exception as rem_e:
+                logger.warning(f"Impossible de supprimer le fichier temp {tmp_path}: {rem_e}")
         return str(e)
 
 def apply_update_from_folder(src_folder, dest_dir):
@@ -109,14 +109,21 @@ def _copy_py_files(src, dst):
     pour éviter de supprimer la DB (data.db) ou les backups/settings.
     """
     for file in os.listdir(src):
-        # On ne copie que nos scripts et dépendances, on évite config.json ou data.db
-        if file.endswith(".py") or file in ["requirements.txt"]:
+        # Sécurité maximale : blocage explicite des fichiers de données
+        if file.endswith(".db") or file.endswith(".json") or file.endswith(".sqlite"):
+            continue
+            
+        # On valide les fichiers sources nécessaires
+        if file.endswith(".py") or file in ["requirements.txt", "logo.png", "logo.ico"]:
             src_file = os.path.join(src, file)
             dst_file = os.path.join(dst, file)
             
-            # Sauvegarder l'ancien fichier au cas où (optionnel, mais pratique)
-            if os.path.exists(dst_file):
-                backup_file = dst_file + ".bak"
-                shutil.copy2(dst_file, backup_file)
-                
-            shutil.copy2(src_file, dst_file)
+            try:
+                # Sauvegarder l'ancien fichier au cas où (optionnel, mais pratique)
+                if os.path.exists(dst_file):
+                    backup_file = dst_file + ".bak"
+                    shutil.copy2(dst_file, backup_file)
+                    
+                shutil.copy2(src_file, dst_file)
+            except Exception as e:
+                logger.error(f"Échec de la copie de {file}: {e}")

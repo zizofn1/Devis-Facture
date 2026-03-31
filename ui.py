@@ -1268,9 +1268,20 @@ class UpdateWindow(tk.Toplevel):
             return
             
         import updater
-        success = updater.apply_update_from_zip(rel["zip_url"], os.path.dirname(__file__))
+        import sys
+        
+        is_frozen = getattr(sys, 'frozen', False)
+        
+        if is_frozen:
+            if not rel.get("exe_url"):
+                messagebox.showerror("Impossible", "Cette version sur GitHub ne contient pas de fichier exécutable (.exe) !\n\nVeuillez télécharger la mise à jour manuellement.")
+                return
+            success = updater.apply_update_exe(rel["exe_url"])
+        else:
+            success = updater.apply_update_from_zip(rel["zip_url"], os.path.dirname(__file__))
+            
         if success is True:
-            messagebox.showinfo("Succès", "Version installée !\n\nL'application va se fermer pour appliquer les changements.")
+            messagebox.showinfo("Succès", "Version installée !\n\nL'application va redémarrer pour appliquer les changements.")
             self.master.destroy()
         else:
             messagebox.showerror("Erreur", f"Échec de l'installation :\n{success}")

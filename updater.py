@@ -41,11 +41,18 @@ def get_latest_releases(repo, limit=5):
             data = json.loads(response.read().decode())
             releases = []
             for item in data:
+                exe_url = None
+                for asset in item.get("assets", []):
+                    if asset.get("name", "").endswith(".exe"):
+                        exe_url = asset.get("browser_download_url")
+                        break
+                        
                 releases.append({
                     "version": item.get("tag_name", "").lstrip("vV"),
                     "date": item.get("published_at", "")[:10], # YYYY-MM-DD
                     "changelog": item.get("body", "Aucune description."),
-                    "zip_url": item.get("zipball_url")
+                    "zip_url": item.get("zipball_url"),
+                    "exe_url": exe_url
                 })
             return releases
     except Exception as e:
@@ -86,7 +93,45 @@ def apply_update_from_zip(zip_url, dest_dir):
             try:
                 os.remove(tmp_path)
             except Exception as rem_e:
-                logger.warning(f"Impossible de supprimer le fichier temp {tmp_path}: {rem_e}")
+                pass
+        return str(e)
+
+def apply_update_exe(exe_url):
+    """
+    Télécharge et remplace l'exécutable courant par le nouvel exécutable GitHub.
+    Utilisé uniquement quand l'app tourne via PyInstaller (frozen).
+    """
+    import sys
+    current_exe = sys.executable
+    new_exe = current_exe + ".new"
+    
+    try:
+        logger.info(f"Telechargement de l'EXE depuis: {exe_url}")
+        req = urllib.request.Request(exe_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=45) as response:
+            with open(new_exe, 'wb') as f:
+                shutil.copyfileobj(response, f)
+                
+        # Préparer le batch script pour remplacer l'exe existant après fermeture
+        bat_path = os.path.join(os.path.dirname(current_exe), "update_exe.bat")
+        lines = [
+            "@echo off",
+            "timeout /t 2 /nobreak >nul",
+            f'move /Y "{new_exe}" "{current_exe}" >nul',
+            f'start "" "{current_exe}"',
+            f'del "%~f0"'
+        ]
+        with open(bat_path, "w") as f:
+            f.write("\n".join(lines))
+            
+        import subprocess
+        subprocess.Popen(["cmd", "/c", "start", "/min", "", bat_path], shell=False, close_fds=True)
+        return True
+    except Exception as e:
+        logger.error(f"Erreur update EXE: {e}")
+        if os.path.exists(new_exe):
+            try: os.remove(new_exe)
+            except: pass
         return str(e)
 
 def apply_update_from_folder(src_folder, dest_dir):

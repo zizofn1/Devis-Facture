@@ -1,7 +1,7 @@
 [Setup]
 AppName=Devis-Facture F&Z
 AppVersion=3.5
-DefaultDirName={autopf}\Devis-Facture FZ
+DefaultDirName=C:\Devis-Facture FZ
 DefaultGroupName=Devis-Facture F&Z
 OutputDir=dist
 OutputBaseFilename=DevisFacture_Setup_v3.5
@@ -20,6 +20,9 @@ Source: "dist\Devis-Facture-FZ\*"; DestDir: "{app}"; Flags: ignoreversion recurs
 [Icons]
 Name: "{group}\Devis-Facture F&Z"; Filename: "{app}\Devis-Facture F&Z.exe"; IconFilename: "{app}\logo.ico"
 Name: "{autodesktop}\Devis-Facture F&Z"; Filename: "{app}\Devis-Facture F&Z.exe"; Tasks: desktopicon; IconFilename: "{app}\logo.ico"
+
+[Dirs]
+Name: "{app}"; Permissions: users-modify
 
 [Run]
 Filename: "{app}\Devis-Facture F&Z.exe"; Description: "{cm:LaunchProgram,Devis-Facture F&Z}"; Flags: nowait postinstall skipifsilent

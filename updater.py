@@ -98,41 +98,34 @@ def apply_update_from_zip(zip_url, dest_dir):
 
 def apply_update_exe(exe_url):
     """
-    Télécharge et remplace l'exécutable courant par le nouvel exécutable GitHub.
-    Utilisé uniquement quand l'app tourne via PyInstaller (frozen).
+    Lance l'updater externe pour remplacer l'exécutable courant.
     """
     import sys
-    current_exe = sys.executable
-    new_exe = current_exe + ".new"
+    import subprocess
     
+    current_exe = sys.executable
+    updater_exe = os.path.join(os.path.dirname(current_exe), "updater.exe")
+    
+    if not os.path.exists(updater_exe):
+        # Fallback au cas où l'updater.exe est manquant (ex: dev mode)
+        logger.error("updater.exe introuvable dans le dossier de l'application.")
+        return "Erreur : le programme de mise à jour (updater.exe) est introuvable."
+
     try:
-        logger.info(f"Telechargement de l'EXE depuis: {exe_url}")
-        req = urllib.request.Request(exe_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=45) as response:
-            with open(new_exe, 'wb') as f:
-                shutil.copyfileobj(response, f)
-                
-        # Préparer le batch script pour remplacer l'exe existant après fermeture
-        bat_path = os.path.join(os.path.dirname(current_exe), "update_exe.bat")
-        lines = [
-            "@echo off",
-            ":: Attendre 3 secondes que l'application soit totalement fermee",
-            "ping 127.0.0.1 -n 3 > nul",
-            f'move /Y "{new_exe}" "{current_exe}" >nul',
-            f'start "" "{current_exe}"',
-            "(goto) 2>nul & del \"%~f0\""
+        # Lancer l'updater avec les arguments nécessaires
+        # On passe le PID actuel pour que l'updater attende qu'on soit fermé
+        cmd = [
+            updater_exe,
+            "--url", exe_url,
+            "--dest", current_exe,
+            "--pid", str(os.getpid())
         ]
-        with open(bat_path, "w") as f:
-            f.write("\n".join(lines))
-            
-        # Lancement natif Windows fiable
-        os.startfile(bat_path)
+        
+        logger.info(f"Lancement de l'updater : {' '.join(cmd)}")
+        subprocess.Popen(cmd, shell=False, creationflags=subprocess.DETACHED_PROCESS)
         return True
     except Exception as e:
-        logger.error(f"Erreur update EXE: {e}")
-        if os.path.exists(new_exe):
-            try: os.remove(new_exe)
-            except: pass
+        logger.error(f"Erreur lors du lancement de l'updater: {e}")
         return str(e)
 
 def apply_update_from_folder(src_folder, dest_dir):

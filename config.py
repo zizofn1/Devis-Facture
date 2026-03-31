@@ -18,10 +18,16 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 def get_data_dir():
-    """ Retourne le dossier persistant où enregistrer la BDD, les logs et les settings. """
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
+    """ Retourne le dossier persistant dans Documents/Devis/Data. """
+    data_dir = os.path.join(os.path.expanduser("~"), "Documents", "Devis", "Data")
+    if not os.path.exists(data_dir):
+        try:
+            os.makedirs(data_dir, exist_ok=True)
+        except Exception as e:
+            # Fallback en cas d'erreur de permission sur Documents
+            print(f"Erreur création dossier data: {e}")
+            return os.path.dirname(os.path.abspath(__file__))
+    return data_dir
 
 # Informations de l'entreprise
 COMPANY = {

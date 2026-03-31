@@ -47,6 +47,35 @@ def _open_file(path: str):
     except Exception:
         pass  # Si ça échoue, on ignore — le PDF est quand même créé
 
+# ==========================================
+# Utilitaire : Tri de colonnes Treeview
+# ==========================================
+
+def _treeview_sort_column(tv, col, reverse):
+    """Trie une colonne d'un Treeview lors d'un clic sur l'en-tête."""
+    l = [(tv.set(k, col), k) for k in tv.get_children('')]
+    
+    try:
+        def parse_val(v):
+            v_clean = v.replace(" MAD", "").replace(" ", "").strip()
+            # Gérer le format date jj/mm/aaaa
+            if "/" in v_clean and len(v_clean) >= 10:
+                parts = v_clean.split()[0].split("/")
+                if len(parts) == 3:
+                    return float(f"{parts[2]}{parts[1]}{parts[0]}")
+            return float(v_clean)
+        l.sort(key=lambda t: parse_val(t[0]), reverse=reverse)
+    except ValueError:
+        # Fallback au tri alphabétique (insensible à la casse)
+        l.sort(key=lambda t: t[0].lower(), reverse=reverse)
+
+    # Réorganiser les éléments
+    for index, (val, k) in enumerate(l):
+        tv.move(k, '', index)
+
+    # Inverser le tri pour le prochain clic
+    tv.heading(col, command=lambda _col=col: _treeview_sort_column(tv, _col, not reverse))
+
 
 # ==========================================
 # Fenêtre : édition d'une ligne article
@@ -911,11 +940,8 @@ class ClientsTab(ttk.Frame):
         ttk.Button(top_bar, text="🔄 Actualiser", command=self.refresh).pack(side="left", padx=5)
         
         self.tree = ttk.Treeview(self, columns=("name", "ice", "address", "phone", "email"), show="headings")
-        self.tree.heading("name", text="Nom Client")
-        self.tree.heading("ice", text="ICE")
-        self.tree.heading("address", text="Adresse")
-        self.tree.heading("phone", text="Téléphone")
-        self.tree.heading("email", text="Email")
+        for c, t in [("name", "Nom Client"), ("ice", "ICE"), ("address", "Adresse"), ("phone", "Téléphone"), ("email", "Email")]:
+            self.tree.heading(c, text=t, command=lambda _c=c: _treeview_sort_column(self.tree, _c, False))
         
         self.tree.column("name", width=150)
         self.tree.column("ice", width=120)
@@ -1002,12 +1028,8 @@ class HistoryTab(ttk.Frame):
         columns = ("id", "type", "num", "date", "client", "ttc")
         self.tree = ttk.Treeview(self, columns=columns, show="headings")
         
-        self.tree.heading("id", text="ID")
-        self.tree.heading("type", text="Type")
-        self.tree.heading("num", text="N° Document")
-        self.tree.heading("date", text="Date")
-        self.tree.heading("client", text="Client")
-        self.tree.heading("ttc", text="Montant TTC")
+        for c, t in [("id", "ID"), ("type", "Type"), ("num", "N° Document"), ("date", "Date"), ("client", "Client"), ("ttc", "Montant TTC")]:
+            self.tree.heading(c, text=t, command=lambda _c=c: _treeview_sort_column(self.tree, _c, False))
         
         self.tree.column("id", width=50, anchor="center")
         self.tree.column("type", width=100, anchor="center")

@@ -1309,19 +1309,35 @@ class AppDevis(tk.Tk):
         self.geometry("900x600")
         self.configure(padx=8, pady=8)
         
-        # Définir l'icône de l'application
+        # Définir l'icône — iconphoto() est la seule méthode fiable pour la barre des tâches
         try:
-            # Essayer plusieurs chemins possibles
-            possible_paths = [
+            from PIL import Image, ImageTk
+            # Chercher le logo PNG (haute résolution) ou ICO
+            possible_icons = [
+                config.resource_path("logo.png"),
+                os.path.join(os.path.dirname(sys.executable), "_internal", "logo.png"),
                 config.resource_path("logo.ico"),
-                os.path.join(os.path.dirname(sys.executable), "logo.ico"),
                 os.path.join(os.path.dirname(sys.executable), "_internal", "logo.ico"),
-                "logo.ico"
+                os.path.join(os.path.dirname(sys.executable), "logo.ico"),
             ]
-            for p in possible_paths:
+            icon_loaded = False
+            for p in possible_icons:
                 if os.path.exists(p):
-                    self.iconbitmap(p)
+                    img = Image.open(p).convert("RGBA").resize((256, 256), Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+                    self.iconphoto(True, photo)
+                    self._icon_photo = photo  # Garder la référence en mémoire!
+                    icon_loaded = True
                     break
+            # Fallback: aussi definir iconbitmap si logo.ico est dispo
+            if icon_loaded:
+                for p in possible_icons:
+                    if p.endswith('.ico') and os.path.exists(p):
+                        try:
+                            self.iconbitmap(p)
+                        except Exception:
+                            pass
+                        break
         except Exception:
             pass
 

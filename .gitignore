@@ -28,6 +28,6 @@ app_settings.json
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
+# Local scripts
+generate_test_data.py
+convert_logo.py

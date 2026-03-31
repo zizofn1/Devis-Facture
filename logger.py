@@ -1,7 +1,8 @@
 import logging
 import os
+import config
 
-LOG_FILE = os.path.join(os.path.dirname(__file__), "app.log")
+LOG_FILE = os.path.join(config.get_data_dir(), "app.log")
 
 logging.basicConfig(
     filename=LOG_FILE,

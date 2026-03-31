@@ -2,7 +2,7 @@
 # CONFIG.PY — Paramètres & Constantes
 # ==========================================
 
-APP_VERSION = "3.4"
+APP_VERSION = "3.5"
 GITHUB_REPO = "zizofn1/Devis-Facture"
 
 import os
@@ -10,14 +10,18 @@ import json
 import sys
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    """ Get absolute path to resource (images), works for dev and for PyInstaller """
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
-
     return os.path.join(base_path, relative_path)
+
+def get_data_dir():
+    """ Retourne le dossier persistant où enregistrer la BDD, les logs et les settings. """
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
 
 # Informations de l'entreprise
 COMPANY = {
@@ -104,7 +108,7 @@ DEFAULT_COLUMNS = [
 # ==========================================
 # GESTION DES PARAMETRES (SETTINGS)
 # ==========================================
-SETTINGS_FILE = os.path.join(os.path.dirname(__file__), 'settings.json')
+SETTINGS_FILE = os.path.join(get_data_dir(), 'settings.json')
 
 def load_settings():
     global DEVIS_VALIDITY_DAYS, DEFAULT_TVA

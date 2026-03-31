@@ -4,11 +4,12 @@ import os
 import shutil
 from datetime import datetime
 from logger import get_logger
+import config
 
 logger = get_logger("database")
 
 # Chemin vers la base de données
-DB_PATH = os.path.join(os.path.dirname(__file__), "data.db")
+DB_PATH = os.path.join(config.get_data_dir(), "data.db")
 
 def _get_connection():
     # check_same_thread=False is generally safe for SQLite in UI apps like this
@@ -20,7 +21,7 @@ def _get_connection():
 def _backup_db():
     if not os.path.exists(DB_PATH):
         return
-    backup_dir = os.path.join(os.path.dirname(__file__), "backups")
+    backup_dir = os.path.join(config.get_data_dir(), "backups")
     if not os.path.exists(backup_dir):
         os.makedirs(backup_dir)
     backup_path = os.path.join(backup_dir, f"data_backup_{datetime.now().strftime('%Y%m%d')}.db")

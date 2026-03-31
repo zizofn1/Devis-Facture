@@ -116,16 +116,22 @@ def apply_update_exe(exe_url):
         bat_path = os.path.join(os.path.dirname(current_exe), "update_exe.bat")
         lines = [
             "@echo off",
-            "timeout /t 2 /nobreak >nul",
+            ":: Attendre 3 secondes que l'application soit totalement fermee",
+            "ping 127.0.0.1 -n 3 > nul",
             f'move /Y "{new_exe}" "{current_exe}" >nul',
             f'start "" "{current_exe}"',
-            f'del "%~f0"'
+            "(goto) 2>nul & del \"%~f0\""
         ]
         with open(bat_path, "w") as f:
             f.write("\n".join(lines))
             
         import subprocess
-        subprocess.Popen(["cmd", "/c", "start", "/min", "", bat_path], shell=False, close_fds=True)
+        # IMPORTANT : ne pas passer bat_path dans la string du 'start', utiliser Popen kwargs correctement
+        subprocess.Popen(
+            ["cmd", "/c", 'start', '""', '"' + bat_path + '"'],
+            shell=True,
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
         return True
     except Exception as e:
         logger.error(f"Erreur update EXE: {e}")

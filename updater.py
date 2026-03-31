@@ -105,9 +105,11 @@ def apply_update_from_folder(src_folder, dest_dir):
 
 def _copy_py_files(src, dst):
     """
-    Écrase uniquement les fichiers Python critiques de l'application
-    pour éviter de supprimer la DB (data.db) ou les backups/settings.
+    Copie les fichiers Python dans des fichiers .new (contourne le lock Windows).
+    Un script 'apply_update.bat' est créé pour finaliser la copie après fermeture de l'app.
     """
+    pending = []
+    
     for file in os.listdir(src):
         # Sécurité maximale : blocage explicite des fichiers de données
         if file.endswith(".db") or file.endswith(".json") or file.endswith(".sqlite"):
@@ -117,13 +119,29 @@ def _copy_py_files(src, dst):
         if file.endswith(".py") or file in ["requirements.txt", "logo.png", "logo.ico"]:
             src_file = os.path.join(src, file)
             dst_file = os.path.join(dst, file)
+            new_file = dst_file + ".new"
             
             try:
-                # Sauvegarder l'ancien fichier au cas où (optionnel, mais pratique)
-                if os.path.exists(dst_file):
-                    backup_file = dst_file + ".bak"
-                    shutil.copy2(dst_file, backup_file)
-                    
-                shutil.copy2(src_file, dst_file)
+                shutil.copy2(src_file, new_file)
+                pending.append((new_file, dst_file))
+                logger.info(f"Fichier {file} prêt pour installation.")
             except Exception as e:
                 logger.error(f"Échec de la copie de {file}: {e}")
+
+    # Créer un script batch qui applique les renommages APRÈS fermeture de l'app
+    if pending:
+        bat_path = os.path.join(dst, "apply_update.bat")
+        lines = ["@echo off", "timeout /t 2 /nobreak >nul"]
+        for new_file, dst_file in pending:
+            bak_file = dst_file + ".bak"
+            lines.append(f'if exist "{dst_file}" copy /Y "{dst_file}" "{bak_file}" >nul')
+            lines.append(f'move /Y "{new_file}" "{dst_file}" >nul')
+        lines.append("del \"%~f0\"")  # auto-suppression du .bat
+        with open(bat_path, "w") as f:
+            f.write("\n".join(lines))
+        
+        # Lancer le script en arrière-plan (après fermeture de l'app)
+        import subprocess
+        subprocess.Popen(["cmd", "/c", "start", "/min", "", bat_path],
+                         shell=False, close_fds=True)
+        logger.info(f"Script apply_update.bat lancé ({len(pending)} fichiers à installer).")

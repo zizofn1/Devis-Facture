@@ -696,6 +696,12 @@ class SettingsWindow(tk.Toplevel):
         self.grab_set()
         self.resizable(False, False)
 
+        try:
+            icon_path = config.resource_path("logo.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except: pass
+
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
 
@@ -819,6 +825,12 @@ class HelpWindow(tk.Toplevel):
         self.title("📖 Guide d'utilisation & FAQ")
         self.geometry("650x550")
         self.grab_set()
+
+        try:
+            icon_path = config.resource_path("logo.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except: pass
         
         notebook = ttk.Notebook(self)
         notebook.pack(fill="both", expand=True, padx=10, pady=10)
@@ -1112,6 +1124,12 @@ class UpdateWindow(tk.Toplevel):
         self.title("🔄 Mise à jour & Historique des versions")
         self.geometry("600x500")
         self.grab_set()
+
+        try:
+            icon_path = config.resource_path("logo.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except: pass
         
         main_frame = ttk.Frame(self)
         main_frame.pack(fill="both", expand=True, padx=15, pady=15)

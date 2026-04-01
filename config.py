@@ -2,7 +2,7 @@
 # CONFIG.PY — Paramètres & Constantes
 # ==========================================
 
-APP_VERSION = "3.5"
+APP_VERSION = "1.4.0"
 GITHUB_REPO = "zizofn1/Devis-Facture"
 
 import os
@@ -25,8 +25,10 @@ def get_data_dir():
             os.makedirs(data_dir, exist_ok=True)
         except Exception as e:
             # Fallback en cas d'erreur de permission sur Documents
-            print(f"Erreur création dossier data: {e}")
-            return os.path.dirname(os.path.abspath(__file__))
+            print(f"Erreur création dossier data: {e}. Fallback vers le répertoire actuel.")
+            fallback_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Data")
+            os.makedirs(fallback_dir, exist_ok=True)
+            return fallback_dir
     return data_dir
 
 # Informations de l'entreprise

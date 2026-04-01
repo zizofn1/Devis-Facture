@@ -96,44 +96,46 @@ def save_document(doc_type: str, doc_num: str, doc_date: str, client_name: str,
     existe déjà, il le met à jour. Sinon, il crée une nouvelle entrée.
     """
     conn = _get_connection()
-    cursor = conn.cursor()
-    
-    # Sérialisation des objets riches en JSON
-    client_json = json.dumps(client_data, ensure_ascii=False)
-    items_json = json.dumps(items_data, ensure_ascii=False)
-    columns_json = json.dumps(columns, ensure_ascii=False)
-    totals_json = json.dumps(totals_data, ensure_ascii=False)
-    is_auto = 1 if is_auto_entrepreneur else 0
-    
-    # Vérifier l'existence
-    cursor.execute("SELECT id FROM documents WHERE doc_type = ? AND doc_num = ?", (doc_type, doc_num))
-    row = cursor.fetchone()
-    
-    if row:
-        doc_id = row[0]
-        cursor.execute('''
-            UPDATE documents SET 
-                doc_date = ?, client_name = ?, total_ht = ?, total_ttc = ?, 
-                is_auto_entrepreneur = ?, client_data_json = ?, items_data_json = ?, 
-                columns_json = ?, totals_data_json = ?
-            WHERE id = ?
-        ''', (doc_date, client_name, total_ht, total_ttc, is_auto, 
-              client_json, items_json, columns_json, totals_json, doc_id))
-    else:
-        cursor.execute('''
-            INSERT INTO documents (
-                doc_type, doc_num, doc_date, client_name, total_ht, total_ttc, 
-                is_auto_entrepreneur, client_data_json, items_data_json, columns_json, totals_data_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (doc_type, doc_num, doc_date, client_name, total_ht, total_ttc, is_auto,
-              client_json, items_json, columns_json, totals_json))
-        doc_id = cursor.lastrowid
-        # Update sequence within the same transaction to avoid locking
-        cursor.execute("UPDATE sequences SET last_number = last_number + 1 WHERE doc_type = ?", (doc_type,))
+    try:
+        cursor = conn.cursor()
         
-    conn.commit()
-    conn.close()
-    return doc_id
+        # Sérialisation des objets riches en JSON
+        client_json = json.dumps(client_data, ensure_ascii=False)
+        items_json = json.dumps(items_data, ensure_ascii=False)
+        columns_json = json.dumps(columns, ensure_ascii=False)
+        totals_json = json.dumps(totals_data, ensure_ascii=False)
+        is_auto = 1 if is_auto_entrepreneur else 0
+        
+        # Vérifier l'existence
+        cursor.execute("SELECT id FROM documents WHERE doc_type = ? AND doc_num = ?", (doc_type, doc_num))
+        row = cursor.fetchone()
+        
+        if row:
+            doc_id = row[0]
+            cursor.execute('''
+                UPDATE documents SET 
+                    doc_date = ?, client_name = ?, total_ht = ?, total_ttc = ?, 
+                    is_auto_entrepreneur = ?, client_data_json = ?, items_data_json = ?, 
+                    columns_json = ?, totals_data_json = ?
+                WHERE id = ?
+            ''', (doc_date, client_name, total_ht, total_ttc, is_auto, 
+                  client_json, items_json, columns_json, totals_json, doc_id))
+        else:
+            cursor.execute('''
+                INSERT INTO documents (
+                    doc_type, doc_num, doc_date, client_name, total_ht, total_ttc, 
+                    is_auto_entrepreneur, client_data_json, items_data_json, columns_json, totals_data_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (doc_type, doc_num, doc_date, client_name, total_ht, total_ttc, is_auto,
+                  client_json, items_json, columns_json, totals_json))
+            doc_id = cursor.lastrowid
+            # Update sequence within the same transaction to avoid locking
+            cursor.execute("UPDATE sequences SET last_number = last_number + 1 WHERE doc_type = ?", (doc_type,))
+            
+        conn.commit()
+        return doc_id
+    finally:
+        conn.close()
 
 def get_all_documents(doc_type=None):
     """

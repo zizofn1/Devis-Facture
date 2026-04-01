@@ -1,0 +1,10 @@
+3334985 🚑 Fix: PyInstaller Database lock temp directory issue & updater shell bug
+273a4e7 🚑 Fix: os.startfile au lieu de Popen pour que Windows lance bien le .bat
+7032de7 🚀 Feature: Updater v2 & Setup Installer (v3.5)
+7ef27ff 🚑 Fix: Auto-Updater robustesse et permissions d'installation
+dca8dde 🐛 Fix: Affichage de l'icône dans la barre des tâches Windows
+e638c08 ✨ Fix: Logo ICO multi-resolution (16→256px) pour barre des taches HD
+743d130 🐛 Fix critique: icon raccourci bureau + barre des taches
+24f4853 🐛 Fix definitif: iconphoto() pour barre des taches Windows
+b8a94df 🔖 Démarrage version 3.6
+653ea1d 🚑 Fix SSL: compatibilité Windows 10 pour mise à jour depuis GitHub

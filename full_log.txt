@@ -1,0 +1,28 @@
+653ea1d 🚑 Fix SSL: compatibilité Windows 10 pour mise à jour depuis GitHub
+b8a94df 🔖 Démarrage version 3.6
+24f4853 🐛 Fix definitif: iconphoto() pour barre des taches Windows
+743d130 🐛 Fix critique: icon raccourci bureau + barre des taches
+e638c08 ✨ Fix: Logo ICO multi-resolution (16→256px) pour barre des taches HD
+dca8dde 🐛 Fix: Affichage de l'icône dans la barre des tâches Windows
+7ef27ff 🚑 Fix: Auto-Updater robustesse et permissions d'installation
+7032de7 🚀 Feature: Updater v2 & Setup Installer (v3.5)
+273a4e7 🚑 Fix: os.startfile au lieu de Popen pour que Windows lance bien le .bat
+3334985 🚑 Fix: PyInstaller Database lock temp directory issue & updater shell bug
+5cc373a ✨ Feature: Auto-update fonctionnel pour l'exécutable (EXE direct replacement)
+c3f3c49 🧹 Nettoyage: Supprimer .bak, debug files, retirer pycache du suivi Git
+6f234c8 🔖 Retour version 3.4 après tag v3.3
+d5b1296 🔖 (temp) set version 3.3 for tag
+fa5385d 🐛 Fix CRITIQUE: Contournement du lock Windows sur les fichiers .py lors de la MAJ
+d92568e 📦 Version 3.4 - Améliorations de l'historique et corrections système
+14ea76f ✨ Ajout du tri par clic sur les en-têtes de colonnes (Historique & Clients)
+4d11efa 🙈 Mise à jour du .gitignore pour ignorer les scripts de test locaux
+b4f7693 🐛 Correction des bugs critiques signalés lors de l'audit (Threading, Silences, Base de données)
+8dd263d 🎨 Final Fix: Icône appliquée à toutes les fenêtres et nom EXE corrigé
+ff01ac8 🎨 Mise à jour du logo (logo.ico régénéré depuis logo.png)
+9642d4f 🚀 Version 3.3 - Rollback & History System
+5823021 🚀 Version 3.2 - Système de Mise à Jour Automatique
+f7b9927 🚀 Version 3.1 - Auto-numerotation & Updated Documentation
+9090c79 🚀 Version 3.0 Release - Full Refactor & New Features
+9b7fe6e V2 implementation with History, Filters, Excel Export and Bundle Support
+6726c5c V2 : Version complète avec Historique, Filtres et Export Excel - Clean DB approach for distribution
+85909bc awal commit dyali

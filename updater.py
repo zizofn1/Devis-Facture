@@ -29,12 +29,19 @@ def check_online(current_version, repo):
     if isinstance(res, list) and len(res) > 0:
         latest = res[0]
         try:
-            curr = float(current_version)
-            lat = float(latest["version"])
-            if lat > curr:
+            def parse_v(v_str):
+                # Extraire uniquement les nombres séparés par des points (ex: 'v1.4.1' -> [1, 4, 1])
+                return [int(x) for x in str(v_str).replace('v', '').replace('V', '').split('.') if x.isdigit()]
+            
+            curr = parse_v(current_version)
+            lat = parse_v(latest["version"])
+            
+            # Python compare automatiquement les listes élément par élément
+            if lat and curr and lat > curr:
                 return latest
-        except ValueError:
-            if latest["version"] != current_version:
+        except Exception as e:
+            logger.error(f"Erreur parsing version: {e}")
+            if str(latest.get("version", "")) != str(current_version):
                 return latest
     return None
 

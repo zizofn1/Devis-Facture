@@ -25,7 +25,17 @@ if __name__ == "__main__":
     if sys.platform == "win32":
         try:
             import ctypes
-            myappid = 'dz.fundesign.devisfacture.app.3_5'
+            # Enable High DPI Awareness (Windows 8.1+)
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(1) # PROCESS_SYSTEM_DPI_AWARE
+            except Exception:
+                # Fallback for older Windows versions (Windows Vista/7)
+                try:
+                    ctypes.windll.user32.SetProcessDPIAware()
+                except Exception:
+                    pass
+            
+            myappid = 'dz.fundesign.devisfacture.app.1_4_0'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception:
             pass

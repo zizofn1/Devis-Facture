@@ -1,11 +1,19 @@
 import os
 import sys
+import ssl
 import time
 import shutil
 import urllib.request
 import argparse
 import subprocess
 import traceback
+
+# Fix SSL pour Windows 10 avec certificats anciens
+def _ssl_ctx():
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
 def log(msg):
     try:
@@ -43,7 +51,7 @@ def main():
     download_success = False
     try:
         req = urllib.request.Request(args.url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=60) as response:
+        with urllib.request.urlopen(req, timeout=60, context=_ssl_ctx()) as response:
             with open(tmp_file, 'wb') as f:
                 shutil.copyfileobj(response, f)
         download_success = True

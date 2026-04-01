@@ -3,6 +3,7 @@
 # ==========================================
 
 import os
+import ssl
 import shutil
 import urllib.request
 import json
@@ -11,6 +12,13 @@ import tempfile
 from logger import get_logger
 
 logger = get_logger("updater")
+
+# Contexte SSL permissif pour compatibilité Windows 7/8/10 avec des certificats anciens
+def _ssl_ctx():
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
 def check_online(current_version, repo):
     """
@@ -37,7 +45,7 @@ def get_latest_releases(repo, limit=5):
     url = f"https://api.github.com/repos/{repo}/releases?per_page={limit}"
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=10, context=_ssl_ctx()) as response:
             data = json.loads(response.read().decode())
             releases = []
             for item in data:

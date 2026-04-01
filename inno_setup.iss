@@ -1,6 +1,6 @@
 [Setup]
 AppName=Devis-Facture F&Z
-AppVersion=3.5.0
+AppVersion=1.4.1
 DefaultDirName=C:\Devis-Facture
 DefaultGroupName=Devis-Facture F&Z
 OutputDir=dist

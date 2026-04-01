@@ -434,6 +434,8 @@ def _section_footer_block(doc_cfg: dict, st: dict, totals_data: dict) -> list:
 # Header / Footer canvas (dessiné sur chaque page)
 # ──────────────────────────────────────────
 
+_IMAGE_CACHE = {}
+
 def _draw_page(canvas, doc):
     """En-tête et pied de page fixes sur toutes les pages."""
     canvas.saveState()
@@ -445,8 +447,11 @@ def _draw_page(canvas, doc):
     logo_y    = PAGE_H - 12 * mm - 20 * mm   # 12mm du bord haut, hauteur 20mm
     if os.path.exists(logo_path):
         try:
+            if logo_path not in _IMAGE_CACHE:
+                _IMAGE_CACHE[logo_path] = ImageReader(logo_path)
+            
             canvas.drawImage(
-                ImageReader(logo_path),
+                _IMAGE_CACHE[logo_path],
                 logo_x, logo_y,
                 width=20 * mm, height=20 * mm,
                 preserveAspectRatio=True, mask="auto",

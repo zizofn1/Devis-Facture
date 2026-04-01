@@ -2,7 +2,7 @@
 # CONFIG.PY — Paramètres & Constantes
 # ==========================================
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 GITHUB_REPO = "zizofn1/Devis-Facture"
 
 import os

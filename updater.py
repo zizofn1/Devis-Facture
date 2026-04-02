@@ -15,9 +15,13 @@ logger = get_logger("updater")
 
 # Contexte SSL permissif pour compatibilité Windows 7/8/10 avec des certificats anciens
 def _ssl_ctx():
-    ctx = ssl.create_default_context()
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+    try:
+        return ssl._create_unverified_context()
+    except AttributeError:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
 
 def parse_version(v_str):
     """ Extraire uniquement les nombres séparés par des points (ex: 'v1.4.1' -> [1, 4, 1]). """

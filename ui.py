@@ -1280,7 +1280,8 @@ class UpdateWindow(tk.Toplevel):
             success = updater.apply_update_from_zip(rel["zip_url"], os.path.dirname(__file__))
             
         if success is True:
-            messagebox.showinfo("Succès", "Version installée !\n\nL'application va redémarrer pour appliquer les changements.")
+            # CRITIQUE: Fermer l'app AVANT que l'installer essaie de remplacer le .exe
+            # Si on affiche un messagebox d'abord, l'app reste ouverte et Windows bloque le fichier!
             self.master.destroy()
         else:
             messagebox.showerror("Erreur", f"Échec de l'installation :\n{success}")

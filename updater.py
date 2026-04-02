@@ -16,9 +16,15 @@ logger = get_logger("updater")
 # Contexte SSL permissif pour compatibilité Windows 7/8/10 avec des certificats anciens
 def _ssl_ctx():
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
+
+def parse_version(v_str):
+    """ Extraire uniquement les nombres séparés par des points (ex: 'v1.4.1' -> [1, 4, 1]). """
+    try:
+        return [int(x) for x in str(v_str).replace('v', '').replace('V', '').split('.') if x.strip().isdigit()]
+    except Exception:
+        return []
 
 def check_online(current_version, repo):
     """
@@ -29,12 +35,8 @@ def check_online(current_version, repo):
     if isinstance(res, list) and len(res) > 0:
         latest = res[0]
         try:
-            def parse_v(v_str):
-                # Extraire uniquement les nombres séparés par des points (ex: 'v1.4.1' -> [1, 4, 1])
-                return [int(x) for x in str(v_str).replace('v', '').replace('V', '').split('.') if x.isdigit()]
-            
-            curr = parse_v(current_version)
-            lat = parse_v(latest["version"])
+            curr = parse_version(current_version)
+            lat = parse_version(latest["version"])
             
             # Python compare automatiquement les listes élément par élément
             if lat and curr and lat > curr:

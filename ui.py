@@ -1253,12 +1253,11 @@ class UpdateWindow(tk.Toplevel):
         rel = self._releases[idx]
         
         is_rollback = False
-        try:
-            curr = float(config.APP_VERSION)
-            target = float(rel["version"])
-            if target < curr: is_rollback = True
-        except ValueError:
-            pass
+        import updater
+        curr_v = updater.parse_version(config.APP_VERSION)
+        target_v = updater.parse_version(rel["version"])
+        if target_v and curr_v and target_v < curr_v:
+            is_rollback = True
         
         msg = f"Confirmer l'installation de la version v{rel['version']} ?"
         if is_rollback:

@@ -7,6 +7,8 @@ import urllib.request
 import argparse
 import subprocess
 import traceback
+import tempfile
+
 
 # Fix SSL pour Windows 10 avec certificats anciens
 def _ssl_ctx():
@@ -45,54 +47,35 @@ def main():
     else:
         time.sleep(3) # Attente par défaut
     
-    # 2. Téléchargement du nouveau fichier
-    tmp_file = args.dest + ".tmp"
-    log(f"Téléchargement du nouvel exécutable...")
+    # 2. Téléchargement de l'installateur externe
+    tmp_dir = tempfile.gettempdir()
+    setup_file = os.path.join(tmp_dir, "DevisFacture_Installer.exe")
+    log(f"Téléchargement de l'installateur vers {setup_file}...")
+    
     download_success = False
     try:
         req = urllib.request.Request(args.url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=60, context=_ssl_ctx()) as response:
-            with open(tmp_file, 'wb') as f:
+            with open(setup_file, 'wb') as f:
                 shutil.copyfileobj(response, f)
         download_success = True
     except Exception as e:
         log(f"Erreur téléchargement : {e}")
         time.sleep(2)
         
-    # 3. Remplacement du fichier (avec retries) si le téléchargement a réussi
-    replace_success = False
+    # 3. Lancer l'installateur (il s'occupe de remplacer tous les fichiers de l'app)
     if download_success:
-        log(f"Remplacement des fichiers...")
-        for i in range(5):
-            try:
-                if os.path.exists(args.dest):
-                    os.remove(args.dest)
-                os.rename(tmp_file, args.dest)
-                replace_success = True
-                log("Fichier remplacé avec succès.")
-                break
-            except Exception as e:
-                log(f"Tentative {i+1} : Impossible de remplacer le fichier ({e}). Nouvel essai...")
-                time.sleep(2)
-                
-        if not replace_success:
-            log("ERREUR : Impossible de terminer la mise à jour du fichier.")
-            # Nettoyage si on a raté le remplacement
-            if os.path.exists(tmp_file):
-                try: os.remove(tmp_file)
-                except: pass
-
-    # 4. Toujours redémarrer l'application (même si la mise à jour a échoué)
-    log(f"Redémarrage de l'application...")
-    try:
-        if os.path.exists(args.dest):
-            subprocess.Popen([args.dest], shell=False)
-        else:
-            log("Le fichier cible n'existe plus pour redémarrer !")
-    except Exception as e:
-        log(f"Erreur redémarrage : {e}")
-        
-    log("Fin de l'updater.")
+        log(f"Lancement de l'installateur...")
+        try:
+            # /SP- désactive la confirmation initiale
+            # /SILENT fait la mise à jour sans obliger de cliquer sur 'Suivant'
+            # /CLOSEAPPLICATIONS force la libération des fichiers restants bloqués
+            cmd = [setup_file, "/SP-", "/SILENT", "/CLOSEAPPLICATIONS"]
+            subprocess.Popen(cmd, shell=False, creationflags=subprocess.DETACHED_PROCESS)
+        except Exception as e:
+            log(f"Erreur lors du lancement du setup: {e}")
+            
+    log("Fin de l'updater. L'installateur va prendre le relais.")
     time.sleep(1)
 
 if __name__ == "__main__":

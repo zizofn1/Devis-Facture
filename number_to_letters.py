@@ -16,7 +16,7 @@ def int_to_letters(n):
             u += 10
         res = dizaines[d]
         if u > 0:
-            if u == 1 or u == 11:
+            if d != 8 and (u == 1 or u == 11):
                 res += " et " + unites[u]
             else:
                 res += "-" + unites[u]
